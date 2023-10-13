@@ -32,7 +32,7 @@ func TestCloudURLFetch(t *testing.T) {
 		name             string
 		response         func(w http.ResponseWriter, r *http.Request)
 		linkExpired      bool
-		expectedResponse SparkArrowBatch
+		expectedResponse ArrowRecordBatch
 		expectedErr      error
 	}{
 		{
@@ -45,11 +45,11 @@ func TestCloudURLFetch(t *testing.T) {
 				}
 			},
 			linkExpired: false,
-			expectedResponse: &sparkArrowBatch{
+			expectedResponse: &arrowRecordBatch{
 				Delimiter: rowscanner.NewDelimiter(0, 3),
-				arrowRecords: []SparkArrowRecord{
-					&sparkArrowRecord{Delimiter: rowscanner.NewDelimiter(0, 3), Record: generateArrowRecord()},
-					&sparkArrowRecord{Delimiter: rowscanner.NewDelimiter(3, 3), Record: generateArrowRecord()},
+				arrowRecords: []ArrowRecord{
+					&arrowRecord{Delimiter: rowscanner.NewDelimiter(0, 3), Record: generateArrowRecord()},
+					&arrowRecord{Delimiter: rowscanner.NewDelimiter(3, 3), Record: generateArrowRecord()},
 				},
 			},
 			expectedErr: nil,
@@ -102,9 +102,9 @@ func TestCloudURLFetch(t *testing.T) {
 
 			if tc.expectedResponse != nil {
 				assert.NotNil(t, resp)
-				esab, ok := tc.expectedResponse.(*sparkArrowBatch)
+				esab, ok := tc.expectedResponse.(*arrowRecordBatch)
 				assert.True(t, ok)
-				asab, ok2 := resp.(*sparkArrowBatch)
+				asab, ok2 := resp.(*arrowRecordBatch)
 				assert.True(t, ok2)
 				if !reflect.DeepEqual(esab.Delimiter, asab.Delimiter) {
 					t.Errorf("expected (%v), got (%v)", esab.Delimiter, asab.Delimiter)

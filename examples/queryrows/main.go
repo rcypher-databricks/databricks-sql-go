@@ -28,6 +28,7 @@ func main() {
 		dbsql.WithPort(port),
 		dbsql.WithHTTPPath(os.Getenv("DATABRICKS_HTTPPATH")),
 		dbsql.WithAccessToken(os.Getenv("DATABRICKS_ACCESSTOKEN")),
+		dbsql.WithMaxRows(1000),
 	)
 	if err != nil {
 		// This will not be a connection error, but a DSN parse error or
@@ -44,7 +45,7 @@ func main() {
 		fmt.Println(err)
 	}
 
-	rows, err1 := db.QueryContext(ctx, `select * from default.intervals`)
+	rows, err1 := db.QueryContext(ctx, `select cut, carat from main.default.diamonds `)
 	if err1 != nil {
 		if err1 == sql.ErrNoRows {
 			fmt.Println("not found")
@@ -75,6 +76,7 @@ func main() {
 
 	// var array_val, map_val, struct_val sql.RawBytes
 
+	var rowNum int64
 	var res1, res2 string
 	for rows.Next() {
 		err := rows.Scan(&res1, &res2)
@@ -83,7 +85,8 @@ func main() {
 			rows.Close()
 			return
 		}
-		fmt.Printf("%v, %v\n", res1, res2)
+		fmt.Printf("row %v: %v, %v\n", rowNum, res1, res2)
+		rowNum += 1
 	}
 
 }

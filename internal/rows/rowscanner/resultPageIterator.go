@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/databricks/databricks-sql-go/driverctx"
 	"github.com/databricks/databricks-sql-go/internal/cli_service"
 	dbsqlerrint "github.com/databricks/databricks-sql-go/internal/errors"
+	"github.com/databricks/databricks-sql-go/internal/iterators"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 )
 
 var errRowsResultFetchFailed = "databricks: Rows instance failed to retrieve results"
+var errRowsResultFetchZeroRows = "databricks: Rows instance retrieved results with zero records"
 var ErrRowsFetchPriorToStart = "databricks: unable to fetch row page prior to start of results"
 var errRowsNilResultPageFetcher = "databricks: nil ResultPageFetcher instance"
 
@@ -20,12 +21,7 @@ func errRowsUnandledFetchDirection(dir string) string {
 }
 
 // Interface for iterating over the pages in the result set of a query
-type ResultPageIterator interface {
-	Next() (*cli_service.TFetchResultsResp, error)
-	HasNext() bool
-	Close() error
-	Delimiter
-}
+type ResultPageIterator iterators.Iterator[*cli_service.TFetchResultsResp]
 
 // Define directions for seeking in the pages of a query result
 type Direction int
@@ -45,58 +41,38 @@ func (d Direction) String() string {
 
 // Create a new result page iterator.
 func NewResultPageIterator(
-	delimiter Delimiter,
-	maxPageSize int64,
-	opHandle *cli_service.TOperationHandle,
+	previousPageBounds Delimiter,
 	closedOnServer bool,
-	client cli_service.TCLIService,
-	connectionId string,
-	correlationId string,
+	hasMoreRows bool,
+	client RowsClient,
+	errMkr ErrMaker,
 	logger *dbsqllog.DBSQLLogger,
 ) ResultPageIterator {
 
 	// delimiter and hasMoreRows are used to set up the point in the paginated
 	// result set that this iterator starts from.
 	return &resultPageIterator{
-		Delimiter:      delimiter,
-		isFinished:     closedOnServer,
-		maxPageSize:    maxPageSize,
-		opHandle:       opHandle,
+		prevPageBounds: previousPageBounds,
+		isFinished:     !hasMoreRows,
 		closedOnServer: closedOnServer,
 		client:         client,
-		connectionId:   connectionId,
-		correlationId:  correlationId,
+		errMkr:         errMkr,
 		logger:         logger,
 	}
 }
 
 type resultPageIterator struct {
-	// Gives the parameters of the current result page
-	Delimiter
+	// bounds of the previously loaded result page
+	prevPageBounds Delimiter
 
 	//	indicates whether there are any more pages in the result set
-	isFinished bool
-
-	// max number of rows to fetch in a page
-	maxPageSize int64
-
-	// handle of the operation producing the result set
-	opHandle *cli_service.TOperationHandle
-
-	// If the server returns an entire result set
-	// in the direct results it may have already
-	// closed the operation.
+	isFinished     bool
 	closedOnServer bool
 
 	// client for communicating with the server
-	client cli_service.TCLIService
+	client RowsClient
 
-	// connectionId to include in logging messages
-	connectionId string
-
-	// user provided value to include in logging messages
-	correlationId string
-
+	errMkr ErrMaker
 	logger *dbsqllog.DBSQLLogger
 }
 
@@ -114,69 +90,64 @@ func (rpf *resultPageIterator) Next() (*cli_service.TFetchResultsResp, error) {
 	}
 
 	if rpf.isFinished {
+		rpf.Close()
 		return nil, io.EOF
 	}
 
 	// Starting row number of next result page. This is used to check that the returned page is
 	// the expected one.
-	nextPageStartRow := rpf.Start() + rpf.Count()
+	nextPageStartRow := rpf.prevPageBounds.Start() + rpf.prevPageBounds.Count()
 
 	rpf.logger.Debug().Msgf("databricks: fetching result page for row %d", nextPageStartRow)
-	ctx := driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(context.Background(), rpf.connectionId), rpf.correlationId)
+
+	var fetchResult *cli_service.TFetchResultsResp
+	var hasMoreRows bool = !rpf.isFinished
 
 	// Keep fetching in the appropriate direction until we have the expected page.
-	var fetchResult *cli_service.TFetchResultsResp
-	var b bool
-	for b = rpf.Contains(nextPageStartRow); !b; b = rpf.Contains(nextPageStartRow) {
-
-		direction := rpf.Direction(nextPageStartRow)
-		err := rpf.checkDirectionValid(ctx, direction)
+	for !rpf.prevPageBounds.Contains(nextPageStartRow) && !rpf.isFinished {
+		direction := rpf.prevPageBounds.Direction(nextPageStartRow)
+		err := checkDirectionValid(rpf.errMkr, rpf.prevPageBounds, hasMoreRows, direction)
 		if err != nil {
+			rpf.logger.Err(err)
+			rpf.Close()
 			return nil, err
 		}
 
-		rpf.logger.Debug().Msgf("fetching next batch of up to %d rows, %s", rpf.maxPageSize, direction.String())
+		rpf.logger.Debug().Msgf("fetching next batch of up to %d rows, %s", 0, direction.String())
 
-		var includeResultSetMetadata = true
-		req := cli_service.TFetchResultsReq{
-			OperationHandle:          rpf.opHandle,
-			MaxRows:                  rpf.maxPageSize,
-			Orientation:              directionToSparkDirection(direction),
-			IncludeResultSetMetadata: &includeResultSetMetadata,
-		}
-
-		fetchResult, err = rpf.client.FetchResults(ctx, &req)
+		fetchResult, hasMoreRows, err = rpf.client.FetchResults(direction)
 		if err != nil {
-			rpf.logger.Err(err).Msg("databricks: Rows instance failed to retrieve results")
-			return nil, dbsqlerrint.NewRequestError(ctx, errRowsResultFetchFailed, err)
+			rpf.logger.Err(err).Msg(errRowsResultFetchFailed)
+			rpf.Close()
+			return nil, rpf.errMkr.Request(errRowsResultFetchFailed, err)
 		}
 
-		rpf.Delimiter = NewDelimiter(fetchResult.Results.StartRowOffset, CountRows(fetchResult.Results))
-		if fetchResult.HasMoreRows != nil {
-			rpf.isFinished = !*fetchResult.HasMoreRows
-		} else {
-			rpf.isFinished = true
+		nRows := CountRows(fetchResult.Results)
+		if nRows == 0 {
+			rpf.logger.Err(err).Msg(errRowsResultFetchZeroRows)
+			rpf.Close()
+			return nil, rpf.errMkr.Request(errRowsResultFetchZeroRows, err)
 		}
-		rpf.logger.Debug().Msgf("databricks: new result page startRow: %d, nRows: %v, hasMoreRows: %v", rpf.Start(), rpf.Count(), fetchResult.HasMoreRows)
+
+		rpf.prevPageBounds = NewDelimiter(fetchResult.Results.StartRowOffset, nRows)
+		rpf.logger.Debug().Msgf("databricks: new result page startRow: %d, nRows: %v, hasMoreRows: %v", rpf.prevPageBounds.Start(), rpf.prevPageBounds.Count(), fetchResult.HasMoreRows)
+	}
+
+	if !hasMoreRows {
+		rpf.Close()
 	}
 
 	return fetchResult, nil
 }
 
-func (rpf *resultPageIterator) Close() (err error) {
-	// if the operation hasn't already been closed on the server we
-	// need to do that now
+func (rpf *resultPageIterator) Close() {
+	rpf.isFinished = true
 	if !rpf.closedOnServer {
 		rpf.closedOnServer = true
-
-		req := cli_service.TCloseOperationReq{
-			OperationHandle: rpf.opHandle,
+		if rpf.client != nil {
+			_ = rpf.client.CloseOperation()
 		}
-
-		_, err = rpf.client.CloseOperation(context.Background(), &req)
-		return err
 	}
-	return
 }
 
 // countRows returns the number of rows in the TRowSet
@@ -185,80 +156,65 @@ func CountRows(rowSet *cli_service.TRowSet) int64 {
 		return 0
 	}
 
+	var n int64
 	if rowSet.ArrowBatches != nil {
 		batches := rowSet.ArrowBatches
-		var n int64
 		for i := range batches {
 			n += batches[i].RowCount
 		}
-		return n
-	}
-
-	if rowSet.ResultLinks != nil {
+	} else if rowSet.ResultLinks != nil {
 		links := rowSet.ResultLinks
-		var n int64
 		for i := range links {
 			n += links[i].RowCount
 		}
-		return n
-	}
-
-	if rowSet != nil && rowSet.Columns != nil {
+	} else if rowSet.Columns != nil {
 		// Find a column/values and return the number of values.
 		for _, col := range rowSet.Columns {
 			if col.BoolVal != nil {
-				return int64(len(col.BoolVal.Values))
+				n = int64(len(col.BoolVal.Values))
 			}
 			if col.ByteVal != nil {
-				return int64(len(col.ByteVal.Values))
+				n = int64(len(col.ByteVal.Values))
 			}
 			if col.I16Val != nil {
-				return int64(len(col.I16Val.Values))
+				n = int64(len(col.I16Val.Values))
 			}
 			if col.I32Val != nil {
-				return int64(len(col.I32Val.Values))
+				n = int64(len(col.I32Val.Values))
 			}
 			if col.I64Val != nil {
-				return int64(len(col.I64Val.Values))
+				n = int64(len(col.I64Val.Values))
 			}
 			if col.StringVal != nil {
-				return int64(len(col.StringVal.Values))
+				n = int64(len(col.StringVal.Values))
 			}
 			if col.DoubleVal != nil {
-				return int64(len(col.DoubleVal.Values))
+				n = int64(len(col.DoubleVal.Values))
 			}
 			if col.BinaryVal != nil {
-				return int64(len(col.BinaryVal.Values))
+				n = int64(len(col.BinaryVal.Values))
 			}
 		}
 	}
-	return 0
+	return n
 }
 
 // Check if trying to fetch in the specified direction creates an error condition.
-func (rpf *resultPageIterator) checkDirectionValid(ctx context.Context, direction Direction) error {
-	if direction == DirBack {
-		// can't fetch rows previous to the start
-		if rpf.Start() == 0 {
-			return dbsqlerrint.NewDriverError(ctx, ErrRowsFetchPriorToStart, nil)
-		}
-	} else if direction == DirForward {
-		// can't fetch past the end of the query results
-		if rpf.isFinished {
-			return io.EOF
-		}
-	} else {
-		rpf.logger.Error().Msgf(errRowsUnandledFetchDirection(direction.String()))
-		return dbsqlerrint.NewDriverError(ctx, errRowsUnandledFetchDirection(direction.String()), nil)
-	}
-	return nil
-}
-
-func directionToSparkDirection(d Direction) cli_service.TFetchOrientation {
-	switch d {
+func checkDirectionValid(errMkr ErrMaker, currentPageBounds Delimiter, hasMoreRows bool, direction Direction) (err error) {
+	switch direction {
 	case DirBack:
-		return cli_service.TFetchOrientation_FETCH_PRIOR
+		if currentPageBounds.Start() == 0 {
+			// can't fetch rows previous to the start
+			err = errMkr.Driver(ErrRowsFetchPriorToStart, nil)
+		}
+	case DirForward:
+		if !hasMoreRows {
+			// can't fetch past the end of the query results
+			err = io.EOF
+		}
 	default:
-		return cli_service.TFetchOrientation_FETCH_NEXT
+		err = errMkr.Driver(errRowsUnandledFetchDirection(direction.String()), nil)
 	}
+
+	return
 }

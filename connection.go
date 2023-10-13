@@ -57,6 +57,7 @@ func (c *conn) Close() error {
 		log.Err(err).Msg("databricks: failed to close connection")
 		return dbsqlerrint.NewRequestError(ctx, dbsqlerr.ErrCloseConnection, err)
 	}
+
 	return nil
 }
 
@@ -112,6 +113,7 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	defer log.Duration(msg, start)
 
 	corrId := driverctx.CorrelationIdFromContext(ctx)
+
 	if len(args) > 0 && c.session.ServerProtocolVersion < cli_service.TProtocolVersion_SPARK_CLI_SERVICE_PROTOCOL_V8 {
 		return nil, dbsqlerrint.NewDriverError(ctx, dbsqlerr.ErrParametersNotSupported, nil)
 	}
@@ -175,7 +177,7 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	}
 
 	corrId := driverctx.CorrelationIdFromContext(ctx)
-	rows, err := rows.NewRows(c.id, corrId, exStmtResp.OperationHandle, c.client, c.cfg, exStmtResp.DirectResults)
+	rows, err := rows.NewRows2(c.id, corrId, exStmtResp.OperationHandle, c.client, c.cfg, exStmtResp.DirectResults, c.cfg.UseArrowBatches)
 
 	return rows, err
 
@@ -333,9 +335,9 @@ func (c *conn) executeStatement(ctx context.Context, query string, args []driver
 			})
 
 			if err1 != nil {
-				log.Err(err1).Msgf("databricks: cancel failed")
+				log.Err(err1).Msg("databricks: cancel failed")
 			} else {
-				log.Debug().Msgf("databricks: cancel success")
+				log.Debug().Msg("databricks: cancel success")
 			}
 		} else {
 			log.Debug().Msg("databricks: query did not need cancellation")
@@ -567,7 +569,7 @@ func (c *conn) execStagingOperation(
 	}
 
 	if len(driverctx.StagingPathsFromContext(ctx)) != 0 {
-		row, err = rows.NewRows(c.id, corrId, exStmtResp.OperationHandle, c.client, c.cfg, exStmtResp.DirectResults)
+		row, err = rows.NewRows2(c.id, corrId, exStmtResp.OperationHandle, c.client, c.cfg, exStmtResp.DirectResults, c.cfg.UseArrowBatches)
 		if err != nil {
 			return dbsqlerrint.NewDriverError(ctx, "error reading row.", err)
 		}

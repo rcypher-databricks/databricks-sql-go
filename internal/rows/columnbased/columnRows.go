@@ -18,21 +18,31 @@ var errRowsParseDateTime = "databricks: column row scanner failed to parse date/
 
 // row scanner for query results in column based format
 type columnRowScanner struct {
+	currentBounds rowscanner.Delimiter
 	*dbsqllog.DBSQLLogger
 	// TRowSet with query results in column format
 	rowSet *cli_service.TRowSet
 	schema *cli_service.TTableSchema
 
 	location *time.Location
-	ctx      context.Context
-	rowscanner.Delimiter
+	// ctx                context.Context
+	resultPageIterator rowscanner.ResultPageIterator
+	nextRowNumber      int64
+	errMkr             rowscanner.ErrMaker
 }
 
-var _ rowscanner.RowScanner = (*columnRowScanner)(nil)
+var _ rowscanner.RowScanner2 = (*columnRowScanner)(nil)
 
 // NewColumnRowScanner returns a columnRowScanner initialized with the provided
 // values.
-func NewColumnRowScanner(schema *cli_service.TTableSchema, rowSet *cli_service.TRowSet, cfg *config.Config, logger *dbsqllog.DBSQLLogger, ctx context.Context) (rowscanner.RowScanner, dbsqlerr.DBError) {
+func NewColumnRowScanner(
+	resulPageIterator rowscanner.ResultPageIterator,
+	schema *cli_service.TTableSchema,
+	rowSet *cli_service.TRowSet,
+	cfg *config.Config,
+	logger *dbsqllog.DBSQLLogger,
+	errMkr rowscanner.ErrMaker,
+) (rowscanner.RowScanner2, dbsqlerr.DBError) {
 	if logger == nil {
 		logger = dbsqllog.Logger
 	}
@@ -45,27 +55,26 @@ func NewColumnRowScanner(schema *cli_service.TTableSchema, rowSet *cli_service.T
 	}
 
 	logger.Debug().Msg("databricks: creating column row scanner")
+	currentBounds := rowscanner.NewDelimiter(0, 0)
+	if rowSet != nil {
+		currentBounds = rowscanner.NewDelimiter(rowSet.StartRowOffset, rowscanner.CountRows(rowSet))
+	}
 	rs := &columnRowScanner{
-		Delimiter:   rowscanner.NewDelimiter(rowSet.StartRowOffset, rowscanner.CountRows(rowSet)),
-		schema:      schema,
-		rowSet:      rowSet,
-		DBSQLLogger: logger,
-		location:    location,
-		ctx:         ctx,
+		currentBounds:      currentBounds,
+		schema:             schema,
+		rowSet:             rowSet,
+		DBSQLLogger:        logger,
+		location:           location,
+		resultPageIterator: resulPageIterator,
+		errMkr:             errMkr,
 	}
 
 	return rs, nil
 }
 
 // Close is called when the Rows instance is closed.
-func (crs *columnRowScanner) Close() {}
-
-// NRows returns the number or rows in the current TRowSet
-func (crs *columnRowScanner) NRows() int64 {
-	if crs == nil {
-		return 0
-	}
-	return crs.Count()
+func (crs *columnRowScanner) Close() {
+	crs.resultPageIterator.Close()
 }
 
 // ScanRow is called to populate the provided slice with the
@@ -74,11 +83,22 @@ func (crs *columnRowScanner) NRows() int64 {
 // The dest should not be written to outside of ScanRow. Care
 // should be taken when closing a RowScanner not to modify
 // a buffer held in dest.
-func (crs *columnRowScanner) ScanRow(
-	dest []driver.Value,
-	rowNumber int64) dbsqlerr.DBError {
+func (crs *columnRowScanner) ScanRow(dest []driver.Value) error {
 
-	rowIndex := rowNumber - crs.Start()
+	if !crs.currentBounds.Contains(crs.nextRowNumber) {
+		rp, err := crs.resultPageIterator.Next()
+		if err != nil {
+			return crs.errMkr.Driver("", err)
+		}
+
+		crs.rowSet = rp.Results
+		if crs.schema == nil {
+			crs.schema = rp.ResultSetMetadata.Schema
+		}
+		crs.currentBounds = rowscanner.NewDelimiter(rp.Results.StartRowOffset, rowscanner.CountRows(rp.Results))
+	}
+
+	rowIndex := crs.nextRowNumber - crs.currentBounds.Start()
 	// populate the destinatino slice
 	for i := range dest {
 		val, err := crs.value(crs.rowSet.Columns[i], crs.schema.Columns[i], rowIndex)
@@ -89,6 +109,8 @@ func (crs *columnRowScanner) ScanRow(
 
 		dest[i] = val
 	}
+
+	crs.nextRowNumber += 1
 
 	return nil
 }
@@ -110,7 +132,7 @@ func (crs *columnRowScanner) value(tColumn *cli_service.TColumn, tColumnDesc *cl
 		val, err1 = rowscanner.HandleDateTime(val, dbtype, tColumnDesc.ColumnName, crs.location)
 		if err1 != nil {
 			crs.Err(err).Msg("databrics: column row scanner failed to parse date/time")
-			err = dbsqlerr_int.NewDriverError(crs.ctx, errRowsParseDateTime, err1)
+			err = crs.errMkr.Driver(errRowsParseDateTime, err1)
 		}
 	} else if tVal := tColumn.GetByteVal(); tVal != nil && !rowscanner.IsNull(tVal.Nulls, rowNum) {
 		val = tVal.Values[rowNum]
@@ -138,9 +160,6 @@ func (crs *columnRowScanner) value(tColumn *cli_service.TColumn, tColumnDesc *cl
 	return val, err
 }
 
-func (crs *columnRowScanner) GetArrowBatches(
-	ctx context.Context,
-	cfg config.Config,
-	rpi rowscanner.ResultPageIterator) (dbsqlrows.ArrowBatchIterator, error) {
+func (crs *columnRowScanner) GetArrowBatches(ctx context.Context) (dbsqlrows.ArrowBatchIterator, error) {
 	return nil, dbsqlerr_int.NewDriverError(ctx, "databricks: result set is not in arrow format", nil)
 }

@@ -3,7 +3,7 @@ linters:
   enable:
     - bodyclose
     - deadcode
-    - depguard
+    # - depguard
     - dogsled
     # - dupl
     - errcheck
@@ -27,7 +27,7 @@ linters:
     # - noctx
     - nolintlint
     - staticcheck
-    - structcheck
+    # - structcheck
     # - stylecheck
     - typecheck
     # - unconvert

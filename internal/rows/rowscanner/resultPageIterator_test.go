@@ -1,16 +1,15 @@
 package rowscanner
 
 import (
-	"context"
+	"errors"
 	"testing"
 
 	"github.com/databricks/databricks-sql-go/internal/cli_service"
-	"github.com/databricks/databricks-sql-go/internal/client"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFetchResultPageination(t *testing.T) {
+func TestFetchResultPagination(t *testing.T) {
 	t.Parallel()
 
 	fetches := []fetch{}
@@ -18,40 +17,39 @@ func TestFetchResultPageination(t *testing.T) {
 	client := getSimpleClient(&fetches, pageSequence)
 
 	rf := &resultPageIterator{
-		Delimiter:     NewDelimiter(0, 0),
-		client:        client,
-		logger:        dbsqllog.WithContext("connId", "correlationId", ""),
-		connectionId:  "connId",
-		correlationId: "correlationId",
+		prevPageBounds: NewDelimiter(0, 0),
+		client:         client,
+		logger:         dbsqllog.WithContext("connId", "correlationId", ""),
+		errMkr:         NewErrMaker("connectionId", "correlationId", "queryId"),
 	}
 
 	// next row number is zero so should fetch first result page
 	_, err := rf.Next()
 	assert.Nil(t, err)
 	assert.Len(t, fetches, 1)
-	assert.Equal(t, fetches[0].direction, cli_service.TFetchOrientation_FETCH_NEXT)
+	assert.Equal(t, fetches[0].direction, DirForward)
 
 	// The test client returns rows
 	_, err = rf.Next()
 	assert.Nil(t, err)
 	assert.Len(t, fetches, 5)
 	expected := []fetch{
-		{direction: cli_service.TFetchOrientation_FETCH_NEXT, resultStartRec: 0},
-		{direction: cli_service.TFetchOrientation_FETCH_NEXT, resultStartRec: 15},
-		{direction: cli_service.TFetchOrientation_FETCH_PRIOR, resultStartRec: 10},
-		{direction: cli_service.TFetchOrientation_FETCH_PRIOR, resultStartRec: 0},
-		{direction: cli_service.TFetchOrientation_FETCH_NEXT, resultStartRec: 5},
+		{direction: DirForward, resultStartRec: 0},
+		{direction: DirForward, resultStartRec: 15},
+		{direction: DirBack, resultStartRec: 10},
+		{direction: DirBack, resultStartRec: 0},
+		{direction: DirForward, resultStartRec: 5},
 	}
 	assert.Equal(t, expected, fetches)
 }
 
 type fetch struct {
-	direction      cli_service.TFetchOrientation
+	direction      Direction
 	resultStartRec int
 }
 
 // Build a simple test client
-func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIService {
+func getSimpleClient(fetches *[]fetch, pageSequence []int) RowsClient {
 	// We are simulating the scenario where network errors and retry behaviour cause the fetch
 	// result request to be sent multiple times, resulting in jumping past the next/previous result
 	// page. Behaviour should be robust enough to handle this by changing the fetch orientation.
@@ -80,7 +78,7 @@ func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIServi
 		},
 	}
 
-	getMetadata := func(ctx context.Context, req *cli_service.TGetResultSetMetadataReq) (_r *cli_service.TGetResultSetMetadataResp, _err error) {
+	getMetadata := func() (_r *cli_service.TGetResultSetMetadataResp, _err error) {
 		return metadata, nil
 	}
 
@@ -96,6 +94,7 @@ func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIServi
 			HasMoreRows: &moreRows,
 			Results: &cli_service.TRowSet{
 				StartRowOffset: 0,
+				ArrowBatches:   []*cli_service.TSparkArrowBatch{{RowCount: 5}},
 				Columns:        colVals,
 			},
 		},
@@ -106,6 +105,7 @@ func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIServi
 			HasMoreRows: &moreRows,
 			Results: &cli_service.TRowSet{
 				StartRowOffset: 5,
+				ArrowBatches:   []*cli_service.TSparkArrowBatch{{RowCount: 5}},
 				Columns:        colVals,
 			},
 		},
@@ -116,6 +116,7 @@ func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIServi
 			HasMoreRows: &noMoreRows,
 			Results: &cli_service.TRowSet{
 				StartRowOffset: 10,
+				ArrowBatches:   []*cli_service.TSparkArrowBatch{{RowCount: 5}},
 				Columns:        colVals,
 			},
 		},
@@ -126,6 +127,7 @@ func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIServi
 			HasMoreRows: &noMoreRows,
 			Results: &cli_service.TRowSet{
 				StartRowOffset: 15,
+				ArrowBatches:   []*cli_service.TSparkArrowBatch{{RowCount: 5}},
 				Columns:        []*cli_service.TColumn{},
 			},
 		},
@@ -133,18 +135,44 @@ func getSimpleClient(fetches *[]fetch, pageSequence []int) cli_service.TCLIServi
 
 	pageIndex := -1
 
-	fetchResults := func(ctx context.Context, req *cli_service.TFetchResultsReq) (_r *cli_service.TFetchResultsResp, _err error) {
+	fetchResults := func(dir Direction) (_r *cli_service.TFetchResultsResp, _hasMoreRows bool, _err error) {
 		pageIndex++
 
 		p := pages[pageSequence[pageIndex]]
-		*fetches = append(*fetches, fetch{direction: req.Orientation, resultStartRec: int(p.Results.StartRowOffset)})
-		return p, nil
+		*fetches = append(*fetches, fetch{direction: dir, resultStartRec: int(p.Results.StartRowOffset)})
+		return p, p.GetHasMoreRows(), _err
 	}
 
-	client := &client.TestClient{
-		FnGetResultSetMetadata: getMetadata,
-		FnFetchResults:         fetchResults,
+	client := &testRowsClient{
+
+		fnGetResultSetMetadata: getMetadata,
+		fnFetchResults:         fetchResults,
 	}
 
 	return client
+}
+
+type testRowsClient struct {
+	fnGetResultSetMetadata func() (*cli_service.TGetResultSetMetadataResp, error)
+	fnFetchResults         func(Direction) (results *cli_service.TFetchResultsResp, hasMoreRows bool, err error)
+	fnCloseOperation       func() error
+}
+
+func (tc *testRowsClient) GetResultSetMetadata() (*cli_service.TGetResultSetMetadataResp, error) {
+	if tc.fnGetResultSetMetadata != nil {
+		return tc.fnGetResultSetMetadata()
+	}
+	return nil, errors.New("databricks: not implemented")
+}
+func (tc *testRowsClient) FetchResults(dir Direction) (results *cli_service.TFetchResultsResp, hasMoreRows bool, err error) {
+	if tc.fnFetchResults != nil {
+		return tc.fnFetchResults(dir)
+	}
+	return nil, false, errors.New("databricks: not implemented")
+}
+func (tc *testRowsClient) CloseOperation() error {
+	if tc.fnCloseOperation != nil {
+		return tc.fnCloseOperation()
+	}
+	return errors.New("databricks: not implemented")
 }

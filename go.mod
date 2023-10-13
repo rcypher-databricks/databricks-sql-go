@@ -10,6 +10,7 @@ require (
 	github.com/mattn/go-isatty v0.0.19
 	github.com/pierrec/lz4/v4 v4.1.15
 	github.com/stretchr/testify v1.8.1
+	github.com/zeebo/assert v1.3.0
 	golang.org/x/oauth2 v0.7.0
 	gotest.tools/gotestsum v1.8.2
 )

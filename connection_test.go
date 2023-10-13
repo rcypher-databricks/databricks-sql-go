@@ -160,7 +160,8 @@ func TestConn_executeStatement(t *testing.T) {
 			{state: cli_service.TOperationState_TIMEDOUT_STATE, err: "timeout state", closeOperationCount: 1},
 		}
 
-		for _, opTest := range operationStateTests {
+		for i := range operationStateTests {
+			opTest := operationStateTests[i]
 			closeOperationCount = 0
 			executeStatementCount = 0
 			executeStatementResp.DirectResults.OperationStatus.OperationState = &opTest.state

@@ -7,13 +7,14 @@ import (
 
 	"github.com/apache/arrow/go/v12/arrow"
 	"github.com/apache/arrow/go/v12/arrow/array"
+	"github.com/databricks/databricks-sql-go/internal/cli_service"
 	"github.com/databricks/databricks-sql-go/internal/rows/rowscanner"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"github.com/pkg/errors"
 )
 
 // Abstraction for holding the values for a set of rows
-type RowValues interface {
+type RowsValues interface {
 	rowscanner.Delimiter
 	Close()
 	NColumns() int
@@ -23,18 +24,14 @@ type RowValues interface {
 	SetDelimiter(d rowscanner.Delimiter)
 }
 
-func NewRowValues(d rowscanner.Delimiter, holders []columnValues) RowValues {
-	return &rowValues{Delimiter: d, columnValueHolders: holders}
-}
-
-type rowValues struct {
+type rowsValues struct {
 	rowscanner.Delimiter
 	columnValueHolders []columnValues
 }
 
-var _ RowValues = (*rowValues)(nil)
+var _ RowsValues = (*rowsValues)(nil)
 
-func (rv *rowValues) Close() {
+func (rv *rowsValues) Close() {
 	// release any retained arrow arrays
 	for i := range rv.columnValueHolders {
 		if rv.columnValueHolders[i] != nil {
@@ -43,7 +40,7 @@ func (rv *rowValues) Close() {
 	}
 }
 
-func (rv *rowValues) SetColumnValues(columnIndex int, values arrow.ArrayData) error {
+func (rv *rowsValues) SetColumnValues(columnIndex int, values arrow.ArrayData) error {
 	var err error
 	if columnIndex < len(rv.columnValueHolders) && rv.columnValueHolders[columnIndex] != nil {
 		rv.columnValueHolders[columnIndex].Release()
@@ -52,7 +49,7 @@ func (rv *rowValues) SetColumnValues(columnIndex int, values arrow.ArrayData) er
 	return err
 }
 
-func (rv *rowValues) IsNull(columnIndex int, rowNumber int64) bool {
+func (rv *rowsValues) IsNull(columnIndex int, rowNumber int64) bool {
 	var b bool = true
 	if columnIndex < len(rv.columnValueHolders) {
 		b = rv.columnValueHolders[columnIndex].IsNull(int(rowNumber - rv.Start()))
@@ -60,7 +57,7 @@ func (rv *rowValues) IsNull(columnIndex int, rowNumber int64) bool {
 	return b
 }
 
-func (rv *rowValues) Value(columnIndex int, rowNumber int64) (any, error) {
+func (rv *rowsValues) Value(columnIndex int, rowNumber int64) (any, error) {
 	var err error
 	var value any
 	if columnIndex < len(rv.columnValueHolders) {
@@ -69,13 +66,9 @@ func (rv *rowValues) Value(columnIndex int, rowNumber int64) (any, error) {
 	return value, err
 }
 
-func (rv *rowValues) NColumns() int { return len(rv.columnValueHolders) }
+func (rv *rowsValues) NColumns() int { return len(rv.columnValueHolders) }
 
-func (rv *rowValues) SetDelimiter(d rowscanner.Delimiter) { rv.Delimiter = d }
-
-type valueContainerMaker interface {
-	makeColumnValuesContainers(ars *arrowRowScanner, d rowscanner.Delimiter) error
-}
+func (rv *rowsValues) SetDelimiter(d rowscanner.Delimiter) { rv.Delimiter = d }
 
 // columnValues is the interface for accessing the values for a column
 type columnValues interface {
@@ -570,4 +563,153 @@ func (tvc *nullContainer_) Release() {
 
 func (tvc *nullContainer_) SetValueArray(colData arrow.ArrayData) error {
 	return nil
+}
+
+func makeRowsValues(sar ArrowRecord, colInfo []colInfo, location *time.Location, toTimestampFn timeStampFn, logger *dbsqllog.DBSQLLogger) (RowsValues, error) {
+
+	arrowSchema := sar.Schema()
+	d := rowscanner.NewDelimiter(sar.Start(), sar.Count())
+
+	columnValueHolders := make([]columnValues, len(colInfo))
+	for i, field := range arrowSchema.Fields() {
+		holder, err := makeColumnValueContainer(field.Type, colInfo[i].dbType, location, toTimestampFn, colInfo[i].name)
+		if err != nil {
+			msg := errArrowRowsMakeRowValues(sar.Start(), sar.End(), colInfo[i])
+			logger.Err(err).Msg(msg)
+			return nil, errors.Wrap(err, msg)
+		}
+
+		columnValueHolders[i] = holder
+	}
+
+	rowValues := &rowsValues{Delimiter: d, columnValueHolders: columnValueHolders}
+
+	// for each column we want to create an arrow array specific to the data type
+	for i, col := range sar.Columns() {
+		func() {
+			col.Retain()
+			defer col.Release()
+
+			colData := col.Data()
+			colData.Retain()
+			defer colData.Release()
+
+			err := rowValues.SetColumnValues(i, colData)
+			if err != nil {
+				panic(err.Error())
+				// ars.Error().Msg(err.Error())
+			}
+		}()
+	}
+
+	// Update the delimiter in rowValues to reflect the currently loaded set of rows
+	rowValues.SetDelimiter(rowscanner.NewDelimiter(sar.Start(), sar.Count()))
+	return rowValues, nil
+}
+
+func makeColumnValueContainer(t arrow.DataType, dbType cli_service.TTypeId, location *time.Location, toTimestampFn timeStampFn, colName string) (columnValues, error) {
+	if location == nil {
+		location = time.UTC
+	}
+
+	switch t := t.(type) {
+
+	case *arrow.BooleanType:
+		return &columnValuesTyped[*array.Boolean, bool]{}, nil
+
+	case *arrow.Int8Type:
+		return &columnValuesTyped[*array.Int8, int8]{}, nil
+
+	case *arrow.Int16Type:
+		return &columnValuesTyped[*array.Int16, int16]{}, nil
+
+	case *arrow.Int32Type:
+		return &columnValuesTyped[*array.Int32, int32]{}, nil
+
+	case *arrow.Int64Type:
+		return &columnValuesTyped[*array.Int64, int64]{}, nil
+
+	case *arrow.Float32Type:
+		return &columnValuesTyped[*array.Float32, float32]{}, nil
+
+	case *arrow.Float64Type:
+		return &columnValuesTyped[*array.Float64, float64]{}, nil
+
+	case *arrow.StringType:
+		if dbType == cli_service.TTypeId_TIMESTAMP_TYPE {
+			return &timestampStringValueContainer{location: location, fieldName: colName}, nil
+		} else {
+			return &columnValuesTyped[*array.String, string]{}, nil
+		}
+
+	case *arrow.Decimal128Type:
+		return &decimal128Container{scale: t.Scale}, nil
+
+	case *arrow.Date32Type:
+		return &dateValueContainer{location: location}, nil
+
+	case *arrow.TimestampType:
+		return &timestampValueContainer{location: location, toTimestampFn: toTimestampFn}, nil
+
+	case *arrow.BinaryType:
+		return &columnValuesTyped[*array.Binary, []byte]{}, nil
+
+	case *arrow.ListType:
+		lvc := &listValueContainer{listArrayType: t}
+		var err error
+		lvc.values, err = makeColumnValueContainer(t.Elem(), cli_service.TTypeId_NULL_TYPE, location, toTimestampFn, "")
+		if err != nil {
+			return nil, err
+		}
+		switch t.Elem().(type) {
+		case *arrow.MapType, *arrow.ListType, *arrow.StructType:
+			lvc.complexValue = true
+		}
+		return lvc, nil
+
+	case *arrow.MapType:
+		mvc := &mapValueContainer{mapArrayType: t}
+		var err error
+		mvc.values, err = makeColumnValueContainer(t.ItemType(), cli_service.TTypeId_NULL_TYPE, location, toTimestampFn, "")
+		if err != nil {
+			return nil, err
+		}
+		mvc.keys, err = makeColumnValueContainer(t.KeyType(), cli_service.TTypeId_NULL_TYPE, location, toTimestampFn, "")
+		if err != nil {
+			return nil, err
+		}
+		switch t.ItemType().(type) {
+		case *arrow.MapType, *arrow.ListType, *arrow.StructType:
+			mvc.complexValue = true
+		}
+
+		return mvc, nil
+
+	case *arrow.StructType:
+		svc := &structValueContainer{structArrayType: t}
+		svc.fieldNames = make([]string, len(t.Fields()))
+		svc.fieldValues = make([]columnValues, len(t.Fields()))
+		svc.complexValue = make([]bool, len(t.Fields()))
+		for i, f := range t.Fields() {
+			svc.fieldNames[i] = f.Name
+			c, err := makeColumnValueContainer(f.Type, cli_service.TTypeId_NULL_TYPE, location, toTimestampFn, f.Name)
+			if err != nil {
+				return nil, err
+			}
+			svc.fieldValues[i] = c
+			switch f.Type.(type) {
+			case *arrow.MapType, *arrow.ListType, *arrow.StructType:
+				svc.complexValue[i] = true
+			}
+
+		}
+
+		return svc, nil
+
+	case *arrow.NullType:
+		return nullContainer, nil
+
+	default:
+		return nil, errors.Errorf(errArrowRowsUnhandledArrowType(t.String()))
+	}
 }

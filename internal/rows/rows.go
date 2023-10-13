@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"io"
 	"math"
 	"reflect"
 	"time"
@@ -22,65 +21,23 @@ import (
 	dbsqlrows "github.com/databricks/databricks-sql-go/rows"
 )
 
-// rows implements the following interfaces from database.sql.driver
-// Rows
-// RowsColumnTypeScanType
-// RowsColumnTypeDatabaseTypeName
-// RowsColumnTypeNullable
-// RowsColumnTypeLength
-type rows struct {
-	// The RowScanner is responsible for handling the different
-	// formats in which the query results can be returned
-	rowscanner.RowScanner
-	rowscanner.ResultPageIterator
-
-	// Handle for the associated database operation.
-	opHandle *cli_service.TOperationHandle
-
-	client cli_service.TCLIService
-
-	location *time.Location
-
-	// Metadata for result set
-	resultSetMetadata *cli_service.TGetResultSetMetadataResp
-	schema            *cli_service.TTableSchema
-
-	config *config.Config
-
-	// connId and correlationId are used for creating a context
-	// when accessing the server and when logging
-	connId        string
-	correlationId string
-
-	// Row number within the overall result set
-	nextRowNumber int64
-
-	logger_ *dbsqllog.DBSQLLogger
-
-	ctx context.Context
-}
-
-var _ driver.Rows = (*rows)(nil)
-var _ driver.RowsColumnTypeScanType = (*rows)(nil)
-var _ driver.RowsColumnTypeDatabaseTypeName = (*rows)(nil)
-var _ driver.RowsColumnTypeNullable = (*rows)(nil)
-var _ driver.RowsColumnTypeLength = (*rows)(nil)
-var _ dbsqlrows.Rows = (*rows)(nil)
-
-func NewRows(
+func NewRows2(
 	connId string,
 	correlationId string,
 	opHandle *cli_service.TOperationHandle,
 	client cli_service.TCLIService,
 	config *config.Config,
 	directResults *cli_service.TSparkDirectResults,
-) (driver.Rows, dbsqlerr.DBError) {
+	arrow bool,
+) (driver.Rows, error) {
 
 	var logger *dbsqllog.DBSQLLogger
 	var ctx context.Context
+	var queryId string
 	if opHandle != nil {
-		logger = dbsqllog.WithContext(connId, correlationId, dbsqlclient.SprintGuid(opHandle.OperationId.GUID))
-		ctx = driverctx.NewContextWithQueryId(driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(context.Background(), connId), correlationId), dbsqlclient.SprintGuid(opHandle.OperationId.GUID))
+		queryId = dbsqlclient.SprintGuid(opHandle.OperationId.GUID)
+		logger = dbsqllog.WithContext(connId, correlationId, queryId)
+		ctx = driverctx.NewContextWithQueryId(driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(context.Background(), connId), correlationId), queryId)
 	} else {
 		logger = dbsqllog.WithContext(connId, correlationId, "")
 		ctx = driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(context.Background(), connId), correlationId)
@@ -103,73 +60,89 @@ func NewRows(
 
 	logger.Debug().Msgf("databricks: creating Rows, pageSize: %d, location: %v", pageSize, location)
 
-	r := &rows{
+	rc := rclient{
 		client:        client,
-		opHandle:      opHandle,
-		connId:        connId,
+		maxPageSize:   pageSize,
+		connectionId:  connId,
 		correlationId: correlationId,
-		location:      location,
-		config:        config,
-		logger_:       logger,
-		ctx:           ctx,
+		queryId:       queryId,
+		opHandle:      opHandle,
+		logger:        logger,
 	}
 
+	rows := &rows2{
+		connectionId:  connId,
+		correlationId: correlationId,
+		logger:        logger,
+	}
+
+	errMkr := rowscanner.NewErrMaker(connId, correlationId, queryId)
+
+	var closedOnServer, hasMoreRows bool
+	var fetchResults *cli_service.TFetchResultsResp
+	var resultSetMetadata *cli_service.TGetResultSetMetadataResp
+
+	hasMoreRows = true
 	// if we already have results for the query do some additional initialization
 	if directResults != nil {
 		logger.Debug().Msgf("databricks: creating Rows with direct results")
 		// set the result set metadata
 		if directResults.ResultSetMetadata != nil {
-			r.resultSetMetadata = directResults.ResultSetMetadata
-			r.schema = directResults.ResultSetMetadata.Schema
+			resultSetMetadata = directResults.ResultSetMetadata
 		}
 
-		// initialize the row scanner
-		err := r.makeRowScanner(directResults.ResultSet)
+		// If the entire query result set fits in direct results the server closes
+		// the operations.
+		closedOnServer = directResults != nil && directResults.CloseOperation != nil
+		fetchResults = directResults.GetResultSet()
+		if fetchResults != nil {
+			hasMoreRows = fetchResults.GetHasMoreRows()
+		}
+	}
+
+	var err error
+	if resultSetMetadata == nil {
+		resultSetMetadata, err = getResultSetSchema(connId, correlationId, opHandle, &rc, logger)
 		if err != nil {
-			return r, err
+			return rows, err
 		}
 	}
 
-	var d rowscanner.Delimiter
-	if r.RowScanner != nil {
-		d = rowscanner.NewDelimiter(r.RowScanner.Start(), r.RowScanner.Count())
-	} else {
-		d = rowscanner.NewDelimiter(0, 0)
+	rows.schema = resultSetMetadata.Schema
+
+	// initialize the row scanner
+	rowScanner, err := makeRowScanner(&rc, closedOnServer, hasMoreRows, *config, fetchResults, resultSetMetadata, errMkr, logger, arrow)
+	if err != nil {
+		return rows, err
 	}
 
-	// If the entire query result set fits in direct results the server closes
-	// the operations.
-	closedOnServer := directResults != nil && directResults.CloseOperation != nil
-	r.ResultPageIterator = rowscanner.NewResultPageIterator(
-		d,
-		pageSize,
-		opHandle,
-		closedOnServer,
-		client,
-		connId,
-		correlationId,
-		r.logger(),
-	)
+	rows.rowScanner = rowScanner
 
-	return r, nil
+	return rows, nil
 }
 
-// Columns returns the names of the columns. The number of
-// columns of the result is inferred from the length of the
-// slice. If a particular column name isn't known, an empty
-// string should be returned for that entry.
-func (r *rows) Columns() []string {
-	err := isValidRows(r)
-	if err != nil {
-		return []string{}
-	}
+type rows2 struct {
+	rowScanner    rowscanner.RowScanner2
+	schema        *cli_service.TTableSchema
+	connectionId  string
+	correlationId string
+	logger        *dbsqllog.DBSQLLogger
+}
 
-	schema, err := r.getResultSetSchema()
-	if err != nil {
-		return []string{}
-	}
+var _ driver.Rows = (*rows2)(nil)
+var _ driver.RowsColumnTypeScanType = (*rows2)(nil)
+var _ driver.RowsColumnTypeDatabaseTypeName = (*rows2)(nil)
+var _ driver.RowsColumnTypeNullable = (*rows2)(nil)
+var _ driver.RowsColumnTypeLength = (*rows2)(nil)
+var _ dbsqlrows.Rows = (*rows2)(nil)
 
-	tColumns := schema.GetColumns()
+func (r *rows2) Close() error {
+	r.rowScanner.Close()
+	return nil
+}
+
+func (r *rows2) Columns() []string {
+	tColumns := r.schema.GetColumns()
 	colNames := make([]string, len(tColumns))
 
 	for i := range tColumns {
@@ -179,93 +152,13 @@ func (r *rows) Columns() []string {
 	return colNames
 }
 
-// Close closes the rows iterator.
-func (r *rows) Close() error {
-	if r == nil {
-		return nil
-	}
-
-	if r.RowScanner != nil {
-		// make sure the row scanner frees up any resources
-		r.RowScanner.Close()
-	}
-
-	if r.ResultPageIterator != nil {
-		r.logger().Debug().Msgf("databricks: closing Rows operation")
-		err := r.ResultPageIterator.Close()
-		if err != nil {
-			r.logger().Err(err).Msg(errRowsCloseFailed)
-			return dbsqlerr_int.NewRequestError(r.ctx, errRowsCloseFailed, err)
-		}
-	}
-
-	return nil
+func (r *rows2) Next(dest []driver.Value) (err error) {
+	err = r.rowScanner.ScanRow(dest)
+	return
 }
 
-// Next is called to populate the next row of data into
-// the provided slice. The provided slice will be the same
-// size as the number of columns.
-//
-// Next should return io.EOF when there are no more rows.
-//
-// The dest should not be written to outside of Next. Care
-// should be taken when closing Rows not to modify
-// a buffer held in dest.
-func (r *rows) Next(dest []driver.Value) error {
-	err := isValidRows(r)
-	if err != nil {
-		return err
-	}
-
-	// if the next row is not in the current result page
-	// fetch the containing page
-	var b bool
-	var e error
-	if b, e = r.isNextRowInPage(); !b && e == nil {
-		err := r.fetchResultPage()
-		if err != nil {
-			return err
-		}
-	}
-
-	if e != nil {
-		return e
-	}
-
-	// Put values into the destination slice
-	err = r.ScanRow(dest, r.nextRowNumber)
-	if err != nil {
-		return err
-	}
-
-	r.nextRowNumber++
-
-	return nil
-}
-
-// ColumnTypeScanType returns column's native type
-func (r *rows) ColumnTypeScanType(index int) reflect.Type {
-	err := isValidRows(r)
-	if err != nil {
-		return nil
-	}
-
-	column, err := r.getColumnMetadataByIndex(index)
-	if err != nil {
-		return nil
-	}
-
-	scanType := getScanType(column)
-	return scanType
-}
-
-// ColumnTypeDatabaseTypeName returns column's database type name
-func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
-	err := isValidRows(r)
-	if err != nil {
-		return ""
-	}
-
+// ColumnTypeDatabaseTypeName implements driver.RowsColumnTypeDatabaseTypeName.
+func (r *rows2) ColumnTypeDatabaseTypeName(index int) string {
 	column, err := r.getColumnMetadataByIndex(index)
 	if err != nil {
 		return ""
@@ -276,14 +169,13 @@ func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
 	return dbtype
 }
 
-// ColumnTypeNullable returns a flag indicating whether the column is nullable
-// and an ok value of true if the status of the column is known. Otherwise
-// a value of false is returned for ok.
-func (r *rows) ColumnTypeNullable(index int) (nullable, ok bool) {
+// ColumnTypeNullable implements driver.RowsColumnTypeNullable.
+func (*rows2) ColumnTypeNullable(index int) (nullable bool, ok bool) {
 	return false, false
 }
 
-func (r *rows) ColumnTypeLength(index int) (length int64, ok bool) {
+// ColumnTypeLength implements driver.RowsColumnTypeLength.
+func (r *rows2) ColumnTypeLength(index int) (length int64, ok bool) {
 	columnInfo, err := r.getColumnMetadataByIndex(index)
 	if err != nil {
 		return 0, false
@@ -301,6 +193,169 @@ func (r *rows) ColumnTypeLength(index int) (length int64, ok bool) {
 		return math.MaxInt64, true
 	default:
 		return 0, false
+	}
+}
+
+// GetArrowBatches implements rows.DBSQLRows.
+func (r *rows2) GetArrowBatches(ctx context.Context) (dbsqlrows.ArrowBatchIterator, error) {
+	return r.rowScanner.GetArrowBatches(ctx)
+}
+
+// ColumnTypeScanType implements driver.RowsColumnTypeScanType.
+func (r *rows2) ColumnTypeScanType(index int) reflect.Type {
+	column, err := r.getColumnMetadataByIndex(index)
+	if err != nil {
+		return nil
+	}
+
+	scanType := getScanType(column)
+	return scanType
+}
+
+func getResultSetSchema(connectionId, correlationId string, opHandle *cli_service.TOperationHandle, client rowscanner.RowsClient, logger *dbsqllog.DBSQLLogger) (*cli_service.TGetResultSetMetadataResp, dbsqlerr.DBError) {
+	resp, err2 := client.GetResultSetMetadata()
+	if err2 != nil {
+		logger.Err(err2).Msg(err2.Error())
+		return nil, rowscanner.NewRequestError(connectionId, correlationId, "databricks: Rows instance failed to retrieve result set metadata", err2)
+	}
+
+	return resp, nil
+}
+
+func (r *rows2) getColumnMetadataByIndex(index int) (*cli_service.TColumnDesc, dbsqlerr.DBError) {
+	columns := r.schema.GetColumns()
+	if index < 0 || index >= len(columns) {
+		//TODO
+		err := dbsqlerr_int.NewDriverError(context.Background(), errRowsInvalidColumnIndex(index), nil)
+		r.logger.Err(err).Msg(err.Error())
+		return nil, err
+	}
+
+	return columns[index], nil
+}
+
+func makeRowScanner(
+	client rowscanner.RowsClient,
+	closedOnServer bool,
+	hasMoreRows bool,
+	cfg config.Config,
+	fetchResults *cli_service.TFetchResultsResp,
+	resultSetMetadata *cli_service.TGetResultSetMetadataResp,
+	errMkr rowscanner.ErrMaker,
+	logger *dbsqllog.DBSQLLogger,
+	arrow bool) (rowscanner.RowScanner2, error) {
+	d := rowscanner.NewDelimiter(0, 0)
+
+	var rowSet *cli_service.TRowSet
+	if fetchResults != nil {
+		rowSet = fetchResults.Results
+		d = rowscanner.NewDelimiter(rowSet.StartRowOffset, rowscanner.CountRows(rowSet))
+	}
+
+	rpi := rowscanner.NewResultPageIterator(d, closedOnServer, hasMoreRows, client, errMkr, logger)
+
+	if arrow {
+		rs, err := arrowbased.NewArrowRowScanner2(
+			rpi,
+			closedOnServer,
+			logger,
+			cfg,
+			resultSetMetadata,
+			fetchResults,
+			errMkr,
+		)
+		return rs, err
+	}
+
+	return columnbased.NewColumnRowScanner(rpi, resultSetMetadata.Schema, rowSet, &cfg, logger, errMkr)
+}
+
+type rclient struct {
+	client         cli_service.TCLIService
+	opHandle       *cli_service.TOperationHandle
+	logger         *dbsqllog.DBSQLLogger
+	connectionId   string
+	correlationId  string
+	queryId        string
+	maxPageSize    int64
+	closedOnServer bool
+}
+
+func (rc *rclient) GetResultSetMetadata() (*cli_service.TGetResultSetMetadataResp, error) {
+	req := cli_service.TGetResultSetMetadataReq{
+		OperationHandle: rc.opHandle,
+	}
+	ctx := driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(context.Background(), rc.connectionId), rc.correlationId)
+
+	resp, err := rc.client.GetResultSetMetadata(ctx, &req)
+	if err != nil {
+		rc.logger.Err(err).Msg(err.Error())
+		return nil, dbsqlerr_int.NewRequestError(ctx, "databricks: Rows instance failed to retrieve result set metadata", err)
+	}
+
+	return resp, nil
+}
+
+var errRowsResultFetchFailed = "databricks: Rows instance failed to retrieve results"
+
+func (rc *rclient) FetchResults(direction rowscanner.Direction) (*cli_service.TFetchResultsResp, bool, error) {
+
+	var includeResultSetMetadata = true
+	req := cli_service.TFetchResultsReq{
+		OperationHandle:          rc.opHandle,
+		MaxRows:                  rc.maxPageSize,
+		Orientation:              directionToSparkDirection(direction),
+		IncludeResultSetMetadata: &includeResultSetMetadata,
+	}
+
+	if req.MaxRows <= 0 {
+		req.MaxRows = 1
+	}
+
+	ctx := driverctx.NewContextWithQueryId(driverctx.NewContextWithCorrelationId(
+		driverctx.NewContextWithConnId(
+			context.Background(),
+			rc.connectionId,
+		),
+		rc.correlationId),
+		rc.queryId)
+
+	fetchResult, err := rc.client.FetchResults(ctx, &req)
+	if err != nil {
+		rc.logger.Err(err).Msg("databricks: Rows instance failed to retrieve results")
+		return nil, false, rowscanner.NewRequestError(rc.connectionId, rc.correlationId, errRowsResultFetchFailed, err)
+	}
+	var hasMoreRows bool
+	if fetchResult.HasMoreRows != nil {
+		hasMoreRows = *fetchResult.HasMoreRows
+	}
+
+	return fetchResult, hasMoreRows, err
+}
+
+func (rc *rclient) CloseOperation() (err error) {
+	if !rc.closedOnServer {
+
+		req := cli_service.TCloseOperationReq{
+			OperationHandle: rc.opHandle,
+		}
+
+		_, err = rc.client.CloseOperation(context.Background(), &req)
+	}
+
+	return err
+}
+
+func (rc *rclient) Logger() *dbsqllog.DBSQLLogger {
+	return rc.logger
+}
+
+func directionToSparkDirection(d rowscanner.Direction) cli_service.TFetchOrientation {
+	switch d {
+	case rowscanner.DirBack:
+		return cli_service.TFetchOrientation_FETCH_PRIOR
+	default:
+		return cli_service.TFetchOrientation_FETCH_NEXT
 	}
 }
 
@@ -360,187 +415,4 @@ func getScanType(column *cli_service.TColumnDesc) reflect.Type {
 	default:
 		return scanTypeUnknown
 	}
-}
-
-// isValidRows checks that the row instance is not nil
-// and that it has a client
-func isValidRows(r *rows) dbsqlerr.DBError {
-	var err dbsqlerr.DBError
-	if r == nil {
-		err = dbsqlerr_int.NewDriverError(context.Background(), errRowsNilRows, nil)
-	} else if r.client == nil {
-		err = dbsqlerr_int.NewDriverError(r.ctx, errRowsNoClient, nil)
-		r.logger().Err(err).Msg(errRowsNoClient)
-	}
-
-	return err
-}
-
-func (r *rows) getColumnMetadataByIndex(index int) (*cli_service.TColumnDesc, dbsqlerr.DBError) {
-	err := isValidRows(r)
-	if err != nil {
-		return nil, err
-	}
-
-	schema, err := r.getResultSetSchema()
-	if err != nil {
-		return nil, err
-	}
-
-	columns := schema.GetColumns()
-	if index < 0 || index >= len(columns) {
-		err = dbsqlerr_int.NewDriverError(r.ctx, errRowsInvalidColumnIndex(index), nil)
-		r.logger().Err(err).Msg(err.Error())
-		return nil, err
-	}
-
-	return columns[index], nil
-}
-
-// isNextRowInPage returns a boolean flag indicating whether
-// the next result set row is in the current result set page
-func (r *rows) isNextRowInPage() (bool, dbsqlerr.DBError) {
-	if r == nil || r.RowScanner == nil {
-		return false, nil
-	}
-
-	return r.RowScanner.Contains(r.nextRowNumber), nil
-}
-
-// getResultMetadata does a one time fetch of the result set schema
-func (r *rows) getResultSetSchema() (*cli_service.TTableSchema, dbsqlerr.DBError) {
-	if r.schema == nil {
-		err := isValidRows(r)
-		if err != nil {
-			return nil, err
-		}
-
-		req := cli_service.TGetResultSetMetadataReq{
-			OperationHandle: r.opHandle,
-		}
-		ctx := driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(context.Background(), r.connId), r.correlationId)
-
-		resp, err2 := r.client.GetResultSetMetadata(ctx, &req)
-		if err2 != nil {
-			r.logger().Err(err2).Msg(err2.Error())
-			return nil, dbsqlerr_int.NewRequestError(r.ctx, errRowsMetadataFetchFailed, err)
-		}
-
-		r.resultSetMetadata = resp
-		r.schema = resp.Schema
-
-	}
-
-	return r.schema, nil
-}
-
-// fetchResultPage will fetch the result page containing the next row, if necessary
-func (r *rows) fetchResultPage() error {
-	var err dbsqlerr.DBError = isValidRows(r)
-	if err != nil {
-		return err
-	}
-
-	if r.RowScanner != nil && r.RowScanner.Contains(r.nextRowNumber) {
-		return nil
-	}
-
-	if r.RowScanner != nil && r.nextRowNumber < r.RowScanner.Start() {
-		return dbsqlerr_int.NewDriverError(r.ctx, errRowsOnlyForward, nil)
-	}
-
-	// Close/release the existing row scanner before loading the next result page to
-	// help keep memory usage down.
-	if r.RowScanner != nil {
-		r.RowScanner.Close()
-		r.RowScanner = nil
-	}
-
-	if !r.ResultPageIterator.HasNext() {
-		return io.EOF
-	}
-
-	fetchResult, err1 := r.ResultPageIterator.Next()
-	if err1 != nil {
-		return err1
-	}
-
-	err1 = r.makeRowScanner(fetchResult)
-	if err1 != nil {
-		return err1
-	}
-
-	// We should be iterating over the rows so the next row number should be in the
-	// next result page
-	if !r.RowScanner.Contains(r.nextRowNumber) {
-		return dbsqlerr_int.NewDriverError(r.ctx, errInvalidRowNumberState, nil)
-	}
-
-	return nil
-}
-
-// makeRowScanner creates the embedded RowScanner instance based on the format
-// of the returned query results
-func (r *rows) makeRowScanner(fetchResults *cli_service.TFetchResultsResp) dbsqlerr.DBError {
-
-	schema, err1 := r.getResultSetSchema()
-	if err1 != nil {
-		return err1
-	}
-
-	if fetchResults == nil {
-		return nil
-	}
-
-	var rs rowscanner.RowScanner
-	var err dbsqlerr.DBError
-	if fetchResults.Results != nil {
-
-		if fetchResults.Results.Columns != nil {
-			rs, err = columnbased.NewColumnRowScanner(schema, fetchResults.Results, r.config, r.logger(), r.ctx)
-		} else if fetchResults.Results.ArrowBatches != nil {
-			rs, err = arrowbased.NewArrowRowScanner(r.resultSetMetadata, fetchResults.Results, r.config, r.logger(), r.ctx)
-		} else if fetchResults.Results.ResultLinks != nil {
-			rs, err = arrowbased.NewArrowRowScanner(r.resultSetMetadata, fetchResults.Results, r.config, r.logger(), r.ctx)
-		} else {
-			r.logger().Error().Msg(errRowsUnknowRowType)
-			err = dbsqlerr_int.NewDriverError(r.ctx, errRowsUnknowRowType, nil)
-		}
-
-	} else {
-		r.logger().Error().Msg(errRowsUnknowRowType)
-		err = dbsqlerr_int.NewDriverError(r.ctx, errRowsUnknowRowType, nil)
-	}
-
-	if r.RowScanner != nil {
-		r.RowScanner.Close()
-	}
-
-	r.RowScanner = rs
-
-	return err
-}
-
-func (r *rows) logger() *dbsqllog.DBSQLLogger {
-	if r.logger_ == nil {
-		if r.opHandle != nil {
-			r.logger_ = dbsqllog.WithContext(r.connId, r.correlationId, dbsqlclient.SprintGuid(r.opHandle.OperationId.GUID))
-		} else {
-			r.logger_ = dbsqllog.WithContext(r.connId, r.correlationId, "")
-		}
-	}
-	return r.logger_
-}
-
-func (r *rows) GetArrowBatches(ctx context.Context) (dbsqlrows.ArrowBatchIterator, error) {
-	// update context with correlationId and connectionId which will be used in logging and errors
-	ctx = driverctx.NewContextWithCorrelationId(driverctx.NewContextWithConnId(ctx, r.connId), r.correlationId)
-
-	// If a row scanner exists we use it to create the iterator, that way the iterator includes
-	// data returned as direct results
-	if r.RowScanner != nil {
-		return r.RowScanner.GetArrowBatches(ctx, *r.config, r.ResultPageIterator)
-	}
-
-	return arrowbased.NewArrowRecordIterator(ctx, r.ResultPageIterator, nil, nil, *r.config), nil
 }

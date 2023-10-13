@@ -6,32 +6,53 @@ import (
 	"strings"
 	"time"
 
+	"github.com/databricks/databricks-sql-go/driverctx"
 	dbsqlerr "github.com/databricks/databricks-sql-go/errors"
 	"github.com/databricks/databricks-sql-go/internal/cli_service"
-	"github.com/databricks/databricks-sql-go/internal/config"
 	dbsqlerrint "github.com/databricks/databricks-sql-go/internal/errors"
 	dbsqlrows "github.com/databricks/databricks-sql-go/rows"
 )
 
 // RowScanner is an interface defining the behaviours that are specific to
 // the formats in which query results can be returned.
-type RowScanner interface {
-	Delimiter
+// type RowScanner interface {
+// 	Delimiter
+// 	// ScanRow is called to populate the provided slice with the
+// 	// content of the current row. The provided slice will be the same
+// 	// size as the number of columns.
+// 	// The dest should not be written to outside of ScanRow. Care
+// 	// should be taken when closing a RowScanner not to modify
+// 	// a buffer held in dest.
+// 	ScanRow(dest []driver.Value, rowNumber int64) dbsqlerr.DBError
+
+// 	// NRows returns the number of rows in the current result page
+// 	NRows() int64
+
+// 	// Close any open resources
+// 	Close()
+
+// 	GetArrowBatches(ctx context.Context, cfg config.Config, rpi ResultPageIterator) (dbsqlrows.ArrowBatchIterator, error)
+// }
+
+// RowScanner is an interface defining the behaviours that are specific to
+// the formats in which query results can be returned.
+type RowScanner2 interface {
 	// ScanRow is called to populate the provided slice with the
 	// content of the current row. The provided slice will be the same
 	// size as the number of columns.
 	// The dest should not be written to outside of ScanRow. Care
 	// should be taken when closing a RowScanner not to modify
 	// a buffer held in dest.
-	ScanRow(dest []driver.Value, rowNumber int64) dbsqlerr.DBError
-
-	// NRows returns the number of rows in the current result page
-	NRows() int64
-
+	ScanRow(dest []driver.Value) error
 	// Close any open resources
 	Close()
+	GetArrowBatches(ctx context.Context) (dbsqlrows.ArrowBatchIterator, error)
+}
 
-	GetArrowBatches(ctx context.Context, cfg config.Config, rpi ResultPageIterator) (dbsqlrows.ArrowBatchIterator, error)
+type RowsClient interface {
+	GetResultSetMetadata() (*cli_service.TGetResultSetMetadataResp, error)
+	FetchResults(Direction) (results *cli_service.TFetchResultsResp, hasMoreRows bool, err error)
+	CloseOperation() error
 }
 
 // Expected formats for TIMESTAMP and DATE types when represented by a string value
@@ -186,4 +207,43 @@ func GetDBTypeID(column *cli_service.TColumnDesc) cli_service.TTypeId {
 // Return value may be nil.
 func GetDBTypeQualifiers(column *cli_service.TColumnDesc) *cli_service.TTypeQualifiers {
 	return column.TypeDesc.Types[0].PrimitiveEntry.TypeQualifiers
+}
+
+func NewDriverError(connectionId, correlationId, msg string, err error) dbsqlerr.DBError {
+	ctx := driverctx.NewContextWithConnId(driverctx.NewContextWithCorrelationId(context.Background(), correlationId), connectionId)
+	return dbsqlerrint.NewDriverError(ctx, msg, err)
+}
+
+func NewRequestError(connectionId, correlationId, msg string, err error) dbsqlerr.DBError {
+	ctx := driverctx.NewContextWithConnId(driverctx.NewContextWithCorrelationId(context.Background(), correlationId), connectionId)
+	return dbsqlerrint.NewRequestError(ctx, msg, err)
+}
+
+type ErrMaker interface {
+	Driver(msg string, err error) dbsqlerr.DBError
+	Request(msg string, err error) dbsqlerr.DBError
+	Context() context.Context
+}
+
+type errMaker struct {
+	ctx context.Context
+}
+
+func NewErrMaker(connectionId, correlationId, queryId string) ErrMaker {
+	ctx := driverctx.NewContextWithConnId(context.Background(), connectionId)
+	ctx = driverctx.NewContextWithCorrelationId(ctx, correlationId)
+	ctx = driverctx.NewContextWithQueryId(ctx, queryId)
+	return &errMaker{ctx: ctx}
+}
+
+func (em *errMaker) Driver(msg string, err error) dbsqlerr.DBError {
+	return dbsqlerrint.NewDriverError(em.ctx, msg, err)
+}
+
+func (em *errMaker) Request(msg string, err error) dbsqlerr.DBError {
+	return dbsqlerrint.NewRequestError(em.ctx, msg, err)
+}
+
+func (em *errMaker) Context() context.Context {
+	return em.ctx
 }

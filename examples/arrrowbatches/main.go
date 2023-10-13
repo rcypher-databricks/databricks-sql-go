@@ -90,6 +90,7 @@ func loopWithHasNext(db *sql.DB) {
 		iBatch += 1
 		nRows += int(b.NumRows())
 		b.Release()
+
 	}
 	log.Printf("NRows: %v\n", nRows)
 }

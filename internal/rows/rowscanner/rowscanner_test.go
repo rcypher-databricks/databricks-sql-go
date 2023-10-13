@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/databricks/databricks-sql-go/internal/cli_service"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"github.com/stretchr/testify/assert"
 )
@@ -77,17 +78,19 @@ func TestRowsFetchResultPageErrors(t *testing.T) {
 	assert.EqualError(t, err, "databricks: driver error: "+errRowsNilResultPageFetcher)
 
 	fetcher = &resultPageIterator{
-		Delimiter: NewDelimiter(0, -1),
-		logger:    dbsqllog.WithContext("", "", ""),
+		prevPageBounds: NewDelimiter(0, -1),
+		logger:         dbsqllog.WithContext("", "", ""),
+		errMkr:         NewErrMaker("connectionId", "correlationId", "queryId"),
 	}
 
 	_, err = fetcher.Next()
 	assert.EqualError(t, err, "databricks: driver error: "+ErrRowsFetchPriorToStart, "negative row number should return error")
 
 	fetcher = &resultPageIterator{
-		Delimiter:  NewDelimiter(0, 0),
-		isFinished: true,
-		logger:     dbsqllog.WithContext("", "", ""),
+		prevPageBounds: NewDelimiter(0, 0),
+		isFinished:     true,
+		logger:         dbsqllog.WithContext("", "", ""),
+		errMkr:         NewErrMaker("connectionId", "correlationId", "queryId"),
 	}
 
 	_, err = fetcher.Next()
@@ -115,4 +118,69 @@ func TestDelimiter(t *testing.T) {
 	assert.Equal(t, DirNone, d.Direction(4))
 	assert.Equal(t, DirForward, d.Direction(5))
 	assert.Equal(t, DirBack, d.Direction(-1))
+}
+
+func TestCountRows(t *testing.T) {
+	t.Run("columnBased", func(t *testing.T) {
+		rowSet := &cli_service.TRowSet{}
+		assert.Equal(t, int64(0), CountRows(rowSet))
+
+		rowSet.Columns = make([]*cli_service.TColumn, 1)
+
+		bc := make([]bool, 3)
+		rowSet.Columns[0] = &cli_service.TColumn{BoolVal: &cli_service.TBoolColumn{Values: bc}}
+		assert.Equal(t, int64(len(bc)), CountRows(rowSet))
+
+		by := make([]int8, 5)
+		rowSet.Columns[0] = &cli_service.TColumn{ByteVal: &cli_service.TByteColumn{Values: by}}
+		assert.Equal(t, int64(len(by)), CountRows(rowSet))
+
+		i16 := make([]int16, 7)
+		rowSet.Columns[0] = &cli_service.TColumn{I16Val: &cli_service.TI16Column{Values: i16}}
+		assert.Equal(t, int64(len(i16)), CountRows(rowSet))
+
+		i32 := make([]int32, 11)
+		rowSet.Columns[0] = &cli_service.TColumn{I32Val: &cli_service.TI32Column{Values: i32}}
+		assert.Equal(t, int64(len(i32)), CountRows(rowSet))
+
+		i64 := make([]int64, 13)
+		rowSet.Columns[0] = &cli_service.TColumn{I64Val: &cli_service.TI64Column{Values: i64}}
+		assert.Equal(t, int64(len(i64)), CountRows(rowSet))
+
+		str := make([]string, 17)
+		rowSet.Columns[0] = &cli_service.TColumn{StringVal: &cli_service.TStringColumn{Values: str}}
+		assert.Equal(t, int64(len(str)), CountRows(rowSet))
+
+		dbl := make([]float64, 19)
+		rowSet.Columns[0] = &cli_service.TColumn{DoubleVal: &cli_service.TDoubleColumn{Values: dbl}}
+		assert.Equal(t, int64(len(dbl)), CountRows(rowSet))
+
+		bin := make([][]byte, 23)
+		rowSet.Columns[0] = &cli_service.TColumn{BinaryVal: &cli_service.TBinaryColumn{Values: bin}}
+		assert.Equal(t, int64(len(bin)), CountRows(rowSet))
+	})
+
+	t.Run("with Arrow batches", func(t *testing.T) {
+
+		rowSet := &cli_service.TRowSet{}
+		assert.Equal(t, int64(0), CountRows(rowSet))
+
+		rowSet.ArrowBatches = []*cli_service.TSparkArrowBatch{}
+		assert.Equal(t, int64(0), CountRows(rowSet))
+
+		rowSet.ArrowBatches = []*cli_service.TSparkArrowBatch{{RowCount: 2}, {RowCount: 3}}
+		assert.Equal(t, int64(5), CountRows(rowSet))
+	})
+
+	t.Run("with result links", func(t *testing.T) {
+
+		rowSet := &cli_service.TRowSet{}
+		assert.Equal(t, int64(0), CountRows(rowSet))
+
+		rowSet.ResultLinks = []*cli_service.TSparkArrowResultLink{}
+		assert.Equal(t, int64(0), CountRows(rowSet))
+
+		rowSet.ResultLinks = []*cli_service.TSparkArrowResultLink{{StartRowOffset: 3, RowCount: 2}, {StartRowOffset: 0, RowCount: 3}}
+		assert.Equal(t, int64(5), CountRows(rowSet))
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/databricks/databricks-sql-go/internal/config"
+	"github.com/databricks/databricks-sql-go/internal/iterators"
 	"github.com/databricks/databricks-sql-go/internal/rows/rowscanner"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
@@ -20,40 +21,25 @@ import (
 	"github.com/databricks/databricks-sql-go/internal/fetcher"
 )
 
-type BatchIterator interface {
-	Next() (SparkArrowBatch, error)
-	HasNext() bool
-	Close()
-}
+type BatchLoader iterators.Iterator[ArrowRecordBatch]
 
-type BatchLoader interface {
-	rowscanner.Delimiter
-	GetBatchFor(recordNum int64) (SparkArrowBatch, dbsqlerr.DBError)
-	Close()
-}
-
-func NewBatchIterator(batchLoader BatchLoader) (BatchIterator, dbsqlerr.DBError) {
-	bi := &batchIterator{
-		nextBatchStart: batchLoader.Start(),
-		batchLoader:    batchLoader,
-	}
-
-	return bi, nil
-}
-
-func NewCloudBatchLoader(ctx context.Context, files []*cli_service.TSparkArrowResultLink, startRowOffset int64, cfg *config.Config) (*batchLoader[*cloudURL], dbsqlerr.DBError) {
+func NewCloudBatchLoader(
+	ctx context.Context,
+	files []*cli_service.TSparkArrowResultLink,
+	startRowOffset int64,
+	cfg *config.Config,
+	errMkr rowscanner.ErrMaker) *batchLoader[*cloudURL] {
 
 	if cfg == nil {
 		cfg = config.WithDefaults()
 	}
 
-	inputChan := make(chan fetcher.FetchableItems[SparkArrowBatch], len(files))
+	inputChan := make(chan fetcher.FetchableItems[ArrowRecordBatch], len(files))
 
 	var rowCount int64
 	for i := range files {
 		f := files[i]
 		li := &cloudURL{
-			// TSparkArrowResultLink: f,
 			Delimiter:         rowscanner.NewDelimiter(f.StartRowOffset, f.RowCount),
 			fileLink:          f.FileLink,
 			expiryTime:        f.ExpiryTime,
@@ -70,15 +56,23 @@ func NewCloudBatchLoader(ctx context.Context, files []*cli_service.TSparkArrowRe
 
 	f, _ := fetcher.NewConcurrentFetcher[*cloudURL](ctx, cfg.MaxDownloadThreads, cfg.MaxFilesInMemory, inputChan)
 	cbl := &batchLoader[*cloudURL]{
-		Delimiter: rowscanner.NewDelimiter(startRowOffset, rowCount),
-		fetcher:   f,
-		ctx:       ctx,
+		Delimiter:      rowscanner.NewDelimiter(startRowOffset, rowCount),
+		fetcher:        f,
+		errMkr:         errMkr,
+		nBatches:       len(files),
+		nextBatchStart: startRowOffset,
 	}
 
-	return cbl, nil
+	return cbl
 }
 
-func NewLocalBatchLoader(ctx context.Context, batches []*cli_service.TSparkArrowBatch, startRowOffset int64, arrowSchemaBytes []byte, cfg *config.Config) (*batchLoader[*localBatch], dbsqlerr.DBError) {
+func NewLocalBatchLoader(
+	ctx context.Context,
+	batches []*cli_service.TSparkArrowBatch,
+	startRowOffset int64,
+	arrowSchemaBytes []byte,
+	cfg *config.Config,
+	errMkr rowscanner.ErrMaker) *batchLoader[*localBatch] {
 
 	if cfg == nil {
 		cfg = config.WithDefaults()
@@ -86,7 +80,7 @@ func NewLocalBatchLoader(ctx context.Context, batches []*cli_service.TSparkArrow
 
 	var startRow int64 = startRowOffset
 	var rowCount int64
-	inputChan := make(chan fetcher.FetchableItems[SparkArrowBatch], len(batches))
+	inputChan := make(chan fetcher.FetchableItems[ArrowRecordBatch], len(batches))
 	for i := range batches {
 		b := batches[i]
 		if b != nil {
@@ -105,37 +99,51 @@ func NewLocalBatchLoader(ctx context.Context, batches []*cli_service.TSparkArrow
 
 	f, _ := fetcher.NewConcurrentFetcher[*localBatch](ctx, cfg.MaxDownloadThreads, cfg.MaxFilesInMemory, inputChan)
 	cbl := &batchLoader[*localBatch]{
-		Delimiter: rowscanner.NewDelimiter(startRowOffset, rowCount),
-		fetcher:   f,
-		ctx:       ctx,
+		Delimiter:      rowscanner.NewDelimiter(startRowOffset, rowCount),
+		fetcher:        f,
+		errMkr:         errMkr,
+		nBatches:       len(batches),
+		nextBatchStart: startRowOffset,
 	}
 
-	return cbl, nil
+	return cbl
 }
 
 type batchLoader[T interface {
-	Fetch(ctx context.Context) (SparkArrowBatch, error)
+	Fetch(ctx context.Context) (ArrowRecordBatch, error)
 }] struct {
 	rowscanner.Delimiter
-	fetcher      fetcher.Fetcher[SparkArrowBatch]
-	arrowBatches []SparkArrowBatch
-	ctx          context.Context
+	fetcher        fetcher.Fetcher[ArrowRecordBatch]
+	arrowBatches   []ArrowRecordBatch
+	nBatches       int
+	nextBatchStart int64
+	cancelFetch    context.CancelFunc
+	batchChan      <-chan ArrowRecordBatch
+	errMkr         rowscanner.ErrMaker
 }
 
 var _ BatchLoader = (*batchLoader[*localBatch])(nil)
+var _ iterators.Iterator[ArrowRecordBatch] = (*batchLoader[*localBatch])(nil)
+var _ iterators.Iterator[ArrowRecordBatch] = (*batchLoader[*cloudURL])(nil)
 
-func (cbl *batchLoader[T]) GetBatchFor(rowNumber int64) (SparkArrowBatch, dbsqlerr.DBError) {
+func (cbl *batchLoader[T]) getBatchFor(rowNumber int64) (ArrowRecordBatch, dbsqlerr.DBError) {
 
 	for i := range cbl.arrowBatches {
 		if cbl.arrowBatches[i].Contains(rowNumber) {
-			return cbl.arrowBatches[i], nil
+			ab := cbl.arrowBatches[i]
+			cbl.arrowBatches[i] = cbl.arrowBatches[len(cbl.arrowBatches)-1]
+			cbl.arrowBatches = cbl.arrowBatches[:len(cbl.arrowBatches)-1]
+			return ab, nil
 		}
 	}
 
-	batchChan, _, err := cbl.fetcher.Start()
-	var emptyBatch SparkArrowBatch
+	batchChan, cancelFunc, err := cbl.fetcher.Start()
+	cbl.cancelFetch = cancelFunc
+	cbl.batchChan = batchChan
+
+	var emptyBatch ArrowRecordBatch
 	if err != nil {
-		return emptyBatch, dbsqlerrint.NewDriverError(cbl.ctx, errArrowRowsInvalidRowNumber(rowNumber), err)
+		return emptyBatch, cbl.errMkr.Driver(errArrowRowsStartFetcher, err)
 	}
 
 	for {
@@ -143,23 +151,55 @@ func (cbl *batchLoader[T]) GetBatchFor(rowNumber int64) (SparkArrowBatch, dbsqle
 		if !ok {
 			err := cbl.fetcher.Err()
 			if err != nil {
-				return emptyBatch, dbsqlerrint.NewDriverError(cbl.ctx, errArrowRowsInvalidRowNumber(rowNumber), err)
+				return emptyBatch, cbl.errMkr.Driver(errArrowRowsFetcher, err)
 			}
 			break
 		}
 
-		cbl.arrowBatches = append(cbl.arrowBatches, batch)
 		if batch.Contains(rowNumber) {
 			return batch, nil
+		} else {
+			cbl.arrowBatches = append(cbl.arrowBatches, batch)
 		}
 	}
 
-	return emptyBatch, dbsqlerrint.NewDriverError(cbl.ctx, errArrowRowsInvalidRowNumber(rowNumber), err)
+	return emptyBatch, cbl.errMkr.Driver(errArrowRowsInvalidRowNumber(rowNumber), err)
+}
+
+func (bl *batchLoader[T]) Next() (ArrowRecordBatch, error) {
+	if !bl.HasNext() {
+		return nil, io.EOF
+	}
+
+	batch, err := bl.getBatchFor(bl.nextBatchStart)
+	if err != nil {
+		bl.Close()
+		return nil, err
+	}
+
+	bl.nextBatchStart = batch.Start() + batch.Count()
+
+	return batch, err
+}
+
+func (bl *batchLoader[T]) HasNext() bool {
+	return bl.Contains(bl.nextBatchStart)
 }
 
 func (cbl *batchLoader[T]) Close() {
+	if cbl.cancelFetch != nil {
+		cbl.cancelFetch()
+	}
+
 	for i := range cbl.arrowBatches {
 		cbl.arrowBatches[i].Close()
+	}
+
+	// drain any batches in the fetcher output channel
+	if cbl.batchChan != nil {
+		for b := range cbl.batchChan {
+			b.Close()
+		}
 	}
 }
 
@@ -182,8 +222,8 @@ type cloudURL struct {
 	minTimeToExpiry time.Duration
 }
 
-func (cu *cloudURL) Fetch(ctx context.Context) (SparkArrowBatch, error) {
-	var sab SparkArrowBatch
+func (cu *cloudURL) Fetch(ctx context.Context) (ArrowRecordBatch, error) {
+	var sab ArrowRecordBatch
 
 	if isLinkExpired(cu.expiryTime, cu.minTimeToExpiry) {
 		return sab, errors.New(dbsqlerr.ErrLinkExpired)
@@ -212,7 +252,7 @@ func (cu *cloudURL) Fetch(ctx context.Context) (SparkArrowBatch, error) {
 		return nil, err
 	}
 
-	arrowBatch := sparkArrowBatch{
+	arrowBatch := arrowRecordBatch{
 		Delimiter:    rowscanner.NewDelimiter(cu.Start(), cu.Count()),
 		arrowRecords: records,
 	}
@@ -225,7 +265,7 @@ func isLinkExpired(expiryTime int64, linkExpiryBuffer time.Duration) bool {
 	return expiryTime-bufferSecs < time.Now().Unix()
 }
 
-var _ fetcher.FetchableItems[SparkArrowBatch] = (*cloudURL)(nil)
+var _ fetcher.FetchableItems[ArrowRecordBatch] = (*cloudURL)(nil)
 
 type localBatch struct {
 	compressibleBatch
@@ -234,19 +274,19 @@ type localBatch struct {
 	arrowSchemaBytes []byte
 }
 
-var _ fetcher.FetchableItems[SparkArrowBatch] = (*localBatch)(nil)
+var _ fetcher.FetchableItems[ArrowRecordBatch] = (*localBatch)(nil)
 
-func (lb *localBatch) Fetch(ctx context.Context) (SparkArrowBatch, error) {
+func (lb *localBatch) Fetch(ctx context.Context) (ArrowRecordBatch, error) {
 	r := lb.compressibleBatch.getReader(bytes.NewReader(lb.batchBytes))
 	r = io.MultiReader(bytes.NewReader(lb.arrowSchemaBytes), r)
 
 	records, err := getArrowRecords(r, lb.Start())
 	if err != nil {
-		return &sparkArrowBatch{}, err
+		return &arrowRecordBatch{}, err
 	}
 
 	lb.batchBytes = nil
-	batch := sparkArrowBatch{
+	batch := arrowRecordBatch{
 		Delimiter:    rowscanner.NewDelimiter(lb.Start(), lb.Count()),
 		arrowRecords: records,
 	}
@@ -254,7 +294,7 @@ func (lb *localBatch) Fetch(ctx context.Context) (SparkArrowBatch, error) {
 	return &batch, nil
 }
 
-func getArrowRecords(r io.Reader, startRowOffset int64) ([]SparkArrowRecord, error) {
+func getArrowRecords(r io.Reader, startRowOffset int64) ([]ArrowRecord, error) {
 	ipcReader, err := ipc.NewReader(r)
 	if err != nil {
 		return nil, err
@@ -263,12 +303,12 @@ func getArrowRecords(r io.Reader, startRowOffset int64) ([]SparkArrowRecord, err
 	defer ipcReader.Release()
 
 	startRow := startRowOffset
-	var records []SparkArrowRecord
+	var records []ArrowRecord
 	for ipcReader.Next() {
 		r := ipcReader.Record()
 		r.Retain()
 
-		sar := sparkArrowRecord{
+		sar := arrowRecord{
 			Delimiter: rowscanner.NewDelimiter(startRow, r.NumRows()),
 			Record:    r,
 		}
@@ -286,35 +326,4 @@ func getArrowRecords(r io.Reader, startRowOffset int64) ([]SparkArrowRecord, err
 	}
 
 	return records, nil
-}
-
-type batchIterator struct {
-	nextBatchStart int64
-	batchLoader    BatchLoader
-}
-
-var _ BatchIterator = (*batchIterator)(nil)
-
-func (bi *batchIterator) Next() (SparkArrowBatch, error) {
-	if !bi.HasNext() {
-		return nil, io.EOF
-	}
-	if bi != nil && bi.batchLoader != nil {
-		batch, err := bi.batchLoader.GetBatchFor(bi.nextBatchStart)
-		if batch != nil && err == nil {
-			bi.nextBatchStart = batch.Start() + batch.Count()
-		}
-		return batch, err
-	}
-	return nil, nil
-}
-
-func (bi *batchIterator) HasNext() bool {
-	return bi != nil && bi.batchLoader != nil && bi.batchLoader.Contains(bi.nextBatchStart)
-}
-
-func (bi *batchIterator) Close() {
-	if bi != nil && bi.batchLoader != nil {
-		bi.batchLoader.Close()
-	}
 }
