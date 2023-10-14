@@ -255,7 +255,7 @@ func makeRowScanner(
 	rpi := rowscanner.NewResultPageIterator(d, closedOnServer, hasMoreRows, client, errMkr, logger)
 
 	if arrow {
-		rs, err := arrowbased.NewArrowRowScanner2(
+		rs, err := arrowbased.NewArrowRowScanner(
 			rpi,
 			closedOnServer,
 			logger,

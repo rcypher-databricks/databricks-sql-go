@@ -30,7 +30,7 @@ func TestArrowRowScanner(t *testing.T) {
 		rpi := &testResultPageIterator{}
 		cfg := config.Config{}
 		cfg.UseArrowBatches = true
-		d, err1 := NewArrowRowScanner2(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+		d, err1 := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 		require.Nil(t, err1)
 
 		var ars *arrowRowScanner = d.(*arrowRowScanner)
@@ -58,7 +58,7 @@ func TestArrowRowScanner(t *testing.T) {
 		rpi := &testResultPageIterator{}
 		cfg := config.Config{}
 		cfg.UseArrowBatches = true
-		d, err1 := NewArrowRowScanner2(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+		d, err1 := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 		require.Nil(t, err1)
 
 		d.Close()
@@ -97,7 +97,7 @@ func TestArrowRowScanner(t *testing.T) {
 		cfg := config.Config{}
 		cfg.UseLz4Compression = false
 
-		d, _ := NewArrowRowScanner2(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+		d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 
 		var ars *arrowRowScanner = d.(*arrowRowScanner)
 
@@ -187,7 +187,7 @@ func TestArrowRowScanner(t *testing.T) {
 		cfg := config.Config{}
 		cfg.UseLz4Compression = false
 
-		d, _ := NewArrowRowScanner2(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+		d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 
 		var ars *arrowRowScanner = d.(*arrowRowScanner)
 
@@ -222,7 +222,7 @@ func TestArrowRowScanner(t *testing.T) {
 	})
 
 	t.Run("loadBatch record read failure", func(t *testing.T) {
-			rowSet := &cli_service.TRowSet{
+		rowSet := &cli_service.TRowSet{
 			ArrowBatches: []*cli_service.TSparkArrowBatch{
 				{RowCount: 5},
 				{RowCount: 3},
@@ -238,7 +238,7 @@ func TestArrowRowScanner(t *testing.T) {
 		cfg := config.Config{}
 		cfg.UseLz4Compression = false
 
-		d, _ := NewArrowRowScanner2(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+		d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 
 		var ars *arrowRowScanner = d.(*arrowRowScanner)
 
@@ -255,7 +255,7 @@ func TestArrowRowScanner(t *testing.T) {
 		fbl := &fakeBatchLoader{
 			Delimiter: rowscanner.NewDelimiter(0, 15),
 			batches:   []ArrowRecordBatch{b1, b2, b3},
-			err: errors.New("error reading record"),
+			err:       errors.New("error reading record"),
 		}
 
 		var callCount int
@@ -269,7 +269,7 @@ func TestArrowRowScanner(t *testing.T) {
 		sari := NewSparkArrowRecordIterator(bi)
 		rvi := NewRowsValuesIterator(sari, mkr)
 		ars.rowValuesIterator = rvi
-		
+
 		err := ars.loadBatchFor(0)
 		assert.NotNil(t, err)
 		assert.ErrorContains(t, err, "error reading record")
@@ -1669,7 +1669,7 @@ func make537RowScanner(mrt func(ArrowRecord) (RowsValues, error)) (*arrowRowScan
 	cfg := config.Config{}
 	cfg.UseLz4Compression = false
 
-	d, _ := NewArrowRowScanner2(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+	d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 
 	var ars *arrowRowScanner = d.(*arrowRowScanner)
 

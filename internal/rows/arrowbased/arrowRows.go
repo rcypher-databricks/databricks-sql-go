@@ -48,7 +48,7 @@ type arrowRowScanner struct {
 	errMkr                   rowscanner.ErrMaker
 }
 
-func NewArrowRowScanner2(
+func NewArrowRowScanner(
 	resultPageIterator rowscanner.ResultPageIterator,
 	closedOnServer bool,
 	logger *dbsqllog.DBSQLLogger,

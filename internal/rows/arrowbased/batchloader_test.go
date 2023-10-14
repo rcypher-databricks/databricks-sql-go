@@ -127,6 +127,10 @@ func TestCloudURLFetch(t *testing.T) {
 	}
 }
 
+func TestBatchLoader(t *testing.T){
+
+}
+
 func generateArrowRecord() arrow.Record {
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 
