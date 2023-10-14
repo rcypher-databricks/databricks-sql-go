@@ -126,7 +126,7 @@ var _ BatchLoader = (*batchLoader[*localBatch])(nil)
 var _ iterators.Iterator[ArrowRecordBatch] = (*batchLoader[*localBatch])(nil)
 var _ iterators.Iterator[ArrowRecordBatch] = (*batchLoader[*cloudURL])(nil)
 
-func (cbl *batchLoader[T]) getBatchFor(rowNumber int64) (ArrowRecordBatch, dbsqlerr.DBError) {
+func (cbl *batchLoader[T]) loadBatchFor(rowNumber int64) (ArrowRecordBatch, dbsqlerr.DBError) {
 
 	for i := range cbl.arrowBatches {
 		if cbl.arrowBatches[i].Contains(rowNumber) {
@@ -171,7 +171,7 @@ func (bl *batchLoader[T]) Next() (ArrowRecordBatch, error) {
 		return nil, io.EOF
 	}
 
-	batch, err := bl.getBatchFor(bl.nextBatchStart)
+	batch, err := bl.loadBatchFor(bl.nextBatchStart)
 	if err != nil {
 		bl.Close()
 		return nil, err

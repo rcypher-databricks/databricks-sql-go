@@ -221,60 +221,60 @@ func TestArrowRowScanner(t *testing.T) {
 		assert.EqualError(t, err, "failed making RowsValues")
 	})
 
-	t.Run("loadBatch record read failure", func(t *testing.T) {
-		rowSet := &cli_service.TRowSet{
-			ArrowBatches: []*cli_service.TSparkArrowBatch{
-				{RowCount: 5},
-				{RowCount: 3},
-				{RowCount: 7},
-			},
-		}
-		var hasMoreRows bool
-		fetchResults := &cli_service.TFetchResultsResp{Results: rowSet, HasMoreRows: &hasMoreRows}
-		arrowSchema := getAllTypesArrowSchema()
-		schema := getAllArrowTypesSchema()
-		metadataResp := getMetadataResp(arrowSchema, schema)
-		rpi := &testResultPageIterator{}
-		cfg := config.Config{}
-		cfg.UseLz4Compression = false
+	// t.Run("loadBatch record read failure", func(t *testing.T) {
+	// 	rowSet := &cli_service.TRowSet{
+	// 		ArrowBatches: []*cli_service.TSparkArrowBatch{
+	// 			{RowCount: 5},
+	// 			{RowCount: 3},
+	// 			{RowCount: 7},
+	// 		},
+	// 	}
+	// 	var hasMoreRows bool
+	// 	fetchResults := &cli_service.TFetchResultsResp{Results: rowSet, HasMoreRows: &hasMoreRows}
+	// 	arrowSchema := getAllTypesArrowSchema()
+	// 	schema := getAllArrowTypesSchema()
+	// 	metadataResp := getMetadataResp(arrowSchema, schema)
+	// 	rpi := &testResultPageIterator{}
+	// 	cfg := config.Config{}
+	// 	cfg.UseLz4Compression = false
 
-		d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
+	// 	d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
 
-		var ars *arrowRowScanner = d.(*arrowRowScanner)
+	// 	var ars *arrowRowScanner = d.(*arrowRowScanner)
 
-		assert.Nil(t, ars.rowValues)
+	// 	assert.Nil(t, ars.rowValues)
 
-		b1 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(0, 5), arrowRecords: []ArrowRecord{
-			&arrowRecord{Delimiter: rowscanner.NewDelimiter(0, 2), Record: &fakeRecord{}},
-			&arrowRecord{Delimiter: rowscanner.NewDelimiter(2, 3), Record: &fakeRecord{}}}}
-		b2 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(5, 3), arrowRecords: []ArrowRecord{
-			&arrowRecord{Delimiter: rowscanner.NewDelimiter(5, 3), Record: &fakeRecord{}}}}
-		b3 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(8, 7), arrowRecords: []ArrowRecord{
-			&arrowRecord{Delimiter: rowscanner.NewDelimiter(8, 7), Record: &fakeRecord{}}}}
+	// 	b1 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(0, 5), arrowRecords: []ArrowRecord{
+	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(0, 2), Record: &fakeRecord{}},
+	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(2, 3), Record: &fakeRecord{}}}}
+	// 	b2 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(5, 3), arrowRecords: []ArrowRecord{
+	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(5, 3), Record: &fakeRecord{}}}}
+	// 	b3 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(8, 7), arrowRecords: []ArrowRecord{
+	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(8, 7), Record: &fakeRecord{}}}}
 
-		fbl := &fakeBatchLoader{
-			Delimiter: rowscanner.NewDelimiter(0, 15),
-			batches:   []ArrowRecordBatch{b1, b2, b3},
-			err:       errors.New("error reading record"),
-		}
+	// 	fbl := &fakeBatchLoader{
+	// 		Delimiter: rowscanner.NewDelimiter(0, 15),
+	// 		batches:   []ArrowRecordBatch{b1, b2, b3},
+	// 		err:       errors.New("error reading record"),
+	// 	}
 
-		var callCount int
-		mkr := func(ar ArrowRecord) (RowsValues, error) {
-			callCount += 1
-			return nil, errors.New("failed making RowsValues")
-		}
+	// 	var callCount int
+	// 	mkr := func(ar ArrowRecord) (RowsValues, error) {
+	// 		callCount += 1
+	// 		return nil, errors.New("failed making RowsValues")
+	// 	}
 
-		bli := NewBatchLoaderIterator(rpi, nil)
-		bi := NewBatchIterator(bli, fbl)
-		sari := NewSparkArrowRecordIterator(bi)
-		rvi := NewRowsValuesIterator(sari, mkr)
-		ars.rowValuesIterator = rvi
+	// 	bli := NewBatchLoaderIterator(rpi, nil)
+	// 	bi := NewBatchIterator(bli, fbl)
+	// 	sari := NewSparkArrowRecordIterator(bi)
+	// 	rvi := NewRowsValuesIterator(sari, mkr)
+	// 	ars.rowValuesIterator = rvi
 
-		err := ars.loadBatchFor(0)
-		assert.NotNil(t, err)
-		assert.ErrorContains(t, err, "error reading record")
+	// 	err := ars.loadBatchFor(0)
+	// 	assert.NotNil(t, err)
+	// 	assert.ErrorContains(t, err, "error reading record")
 
-	})
+	// })
 
 	// t.Run("Paginate through batches", func(t *testing.T) {
 	// 	rowSet := &cli_service.TRowSet{

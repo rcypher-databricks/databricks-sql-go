@@ -15,6 +15,8 @@ import (
 	"github.com/apache/arrow/go/v12/arrow/ipc"
 	"github.com/apache/arrow/go/v12/arrow/memory"
 	dbsqlerr "github.com/databricks/databricks-sql-go/errors"
+	"github.com/databricks/databricks-sql-go/internal/cli_service"
+	"github.com/databricks/databricks-sql-go/internal/config"
 	dbsqlerrint "github.com/databricks/databricks-sql-go/internal/errors"
 	"github.com/databricks/databricks-sql-go/internal/rows/rowscanner"
 	"github.com/pkg/errors"
@@ -127,8 +129,156 @@ func TestCloudURLFetch(t *testing.T) {
 	}
 }
 
-func TestBatchLoader(t *testing.T){
+func TestBatchLoader(t *testing.T) {
 
+	t.Run("test loading with cloud batches", func(t *testing.T) {
+		var nLoads int
+		var handler func(w http.ResponseWriter, r *http.Request) = func(w http.ResponseWriter, r *http.Request) {
+			nLoads += 1
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write(generateMockArrowBytes(generateArrowRecord()))
+			if err != nil {
+				panic(err)
+			}
+
+		}
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler(w, r)
+		}))
+		defer server.Close()
+
+		expiryTime := time.Now().Add(10 * time.Second)
+
+		urls := []*cli_service.TSparkArrowResultLink{
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 0,
+				RowCount:       3,
+			},
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 3,
+				RowCount:       3,
+			},
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 6,
+				RowCount:       3,
+			},
+		}
+
+		bl := NewCloudBatchLoader(
+			context.Background(),
+			urls,
+			0,
+			config.WithDefaults(),
+			rowscanner.NewErrMaker("a", "b", "c"),
+		)
+
+		assert.Equal(t, int64(0), bl.Start())
+		assert.Equal(t, int64(9), bl.Count())
+		assert.True(t, bl.HasNext())
+
+		for i := range urls {
+			assert.True(t, bl.HasNext())
+			batch, err := bl.Next()
+			assert.Nil(t, err)
+			assert.NotNil(t, batch)
+			assert.Equal(t, urls[i].RowCount, batch.Count())
+			assert.Equal(t, urls[i].StartRowOffset, batch.Start())
+		}
+
+		assert.False(t, bl.HasNext())
+		assert.Equal(t, len(urls), nLoads)
+	})
+
+	// t.Run("test link load failure", func(t *testing.T) {
+	// 	var nLoads int
+	// 	var handler func(w http.ResponseWriter, r *http.Request) = func(w http.ResponseWriter, r *http.Request) {
+	// 		nLoads += 1
+	// 		if nLoads == 3 {
+	// 			w.WriteHeader(http.StatusInternalServerError)
+	// 		} else {
+	// 			w.WriteHeader(http.StatusOK)
+	// 			_, err := w.Write(generateMockArrowBytes(generateArrowRecord()))
+	// 			if err != nil {
+	// 				panic(err)
+	// 			}
+	// 		}
+	// 	}
+
+	// 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 		handler(w, r)
+	// 	}))
+	// 	defer server.Close()
+
+	// 	expiryTime := time.Now().Add(10 * time.Second)
+
+	// 	urls := []*cli_service.TSparkArrowResultLink{
+	// 		{
+	// 			FileLink:       server.URL,
+	// 			ExpiryTime:     expiryTime.Unix(),
+	// 			StartRowOffset: 0,
+	// 			RowCount:       3,
+	// 		},
+	// 		{
+	// 			FileLink:       server.URL,
+	// 			ExpiryTime:     expiryTime.Unix(),
+	// 			StartRowOffset: 3,
+	// 			RowCount:       3,
+	// 		},
+	// 		{
+	// 			FileLink:       server.URL,
+	// 			ExpiryTime:     expiryTime.Unix(),
+	// 			StartRowOffset: 6,
+	// 			RowCount:       3,
+	// 		},
+	// 		{
+	// 			FileLink:       server.URL,
+	// 			ExpiryTime:     expiryTime.Unix(),
+	// 			StartRowOffset: 9,
+	// 			RowCount:       3,
+	// 		},
+	// 	}
+
+	// 	cfg := config.WithDefaults()
+	// 	cfg.MaxDownloadThreads = 1
+
+	// 	bl, err := NewCloudBatchLoader(
+	// 		context.Background(),
+	// 		urls,
+	// 		0,
+	// 		cfg,
+	// 		&testStatusGetter{},
+	// 		logger.Logger,
+	// 	)
+	// 	assert.Nil(t, err)
+
+	// 	batch, err := bl.GetBatchFor(0)
+	// 	assert.Nil(t, err)
+	// 	assert.NotNil(t, batch)
+
+	// 	time.Sleep(1 * time.Second)
+
+	// 	for _, i := range []int{0, 1} {
+	// 		batch, err := bl.GetBatchFor(urls[i].StartRowOffset + 1)
+	// 		assert.Nil(t, err)
+	// 		assert.NotNil(t, batch)
+	// 		assert.Equal(t, urls[i].RowCount, batch.Count())
+	// 		assert.Equal(t, urls[i].StartRowOffset, batch.Start())
+	// 	}
+
+	// 	for _, i := range []int{2, 3} {
+	// 		_, err := bl.GetBatchFor(urls[i].StartRowOffset + 1)
+	// 		assert.NotNil(t, err)
+
+	// 	}
+
+	// })
 }
 
 func generateArrowRecord() arrow.Record {
