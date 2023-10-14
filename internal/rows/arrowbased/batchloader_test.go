@@ -196,6 +196,39 @@ func TestBatchLoader(t *testing.T) {
 		assert.Equal(t, len(urls), nLoads)
 	})
 
+	t.Run("test loading with local batches", func(t *testing.T) {
+		executeStatementResp := cli_service.TExecuteStatementResp{}
+		loadTestData(t, "diamonds.json", &executeStatementResp)
+		nRows := rowscanner.CountRows(executeStatementResp.DirectResults.ResultSet.Results)
+		arrowBatches := executeStatementResp.DirectResults.ResultSet.Results.ArrowBatches
+
+		bl := NewLocalBatchLoader(
+			context.Background(),
+			arrowBatches,
+			0,
+			executeStatementResp.DirectResults.ResultSetMetadata.ArrowSchema,
+			config.WithDefaults(),
+			rowscanner.NewErrMaker("a", "b", "c"),
+		)
+
+		assert.Equal(t, int64(0), bl.Start())
+		assert.Equal(t, nRows, bl.Count())
+		assert.True(t, bl.HasNext())
+
+		var batchStart int64
+		for i := range arrowBatches {
+			assert.True(t, bl.HasNext())
+			batch, err := bl.Next()
+			assert.Nil(t, err)
+			assert.NotNil(t, batch)
+			assert.Equal(t, arrowBatches[i].RowCount, batch.Count())
+			assert.Equal(t, batchStart, batch.Start())
+
+			batchStart += arrowBatches[i].RowCount
+		}
+
+	})
+
 	// t.Run("test link load failure", func(t *testing.T) {
 	// 	var nLoads int
 	// 	var handler func(w http.ResponseWriter, r *http.Request) = func(w http.ResponseWriter, r *http.Request) {

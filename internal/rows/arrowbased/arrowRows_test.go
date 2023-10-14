@@ -3,7 +3,10 @@ package arrowbased
 import (
 	"bytes"
 	"database/sql/driver"
+	"encoding/json"
+	"fmt"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/apache/arrow/go/v12/arrow"
@@ -1594,15 +1597,15 @@ func getAllTypesSchema() *cli_service.TTableSchema {
 // 	return nil
 // }
 
-// func loadTestData(t *testing.T, name string, v any) {
-// 	if f, err := os.ReadFile(fmt.Sprintf("testdata/%s", name)); err != nil {
-// 		t.Errorf("could not read data from: %s", name)
-// 	} else {
-// 		if err := json.Unmarshal(f, v); err != nil {
-// 			t.Errorf("could not load data from: %s", name)
-// 		}
-// 	}
-// }
+func loadTestData(t *testing.T, name string, v any) {
+	if f, err := os.ReadFile(fmt.Sprintf("testdata/%s", name)); err != nil {
+		t.Errorf("could not read data from: %s", name)
+	} else {
+		if err := json.Unmarshal(f, v); err != nil {
+			t.Errorf("could not load data from: %s", name)
+		}
+	}
+}
 
 func getMetadataResp(arrowSchema *arrow.Schema, schema *cli_service.TTableSchema) *cli_service.TGetResultSetMetadataResp {
 	var output bytes.Buffer
