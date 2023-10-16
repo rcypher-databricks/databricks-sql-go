@@ -1,0 +1,324 @@
+{
+    "status": {
+        "statusCode": "SUCCESS_STATUS"
+    },
+    "operationHandle": {
+        "operationId": {
+            "guid": "Ae5rCct/FceczY9Thii01g==",
+            "secret": "M41SnYJyRuuEgstBlGaDnQ==",
+            "executionVersion": 0
+        },
+        "operationType": "EXECUTE_STATEMENT",
+        "hasResultSet": true
+    },
+    "directResults": {
+        "operationStatus": {
+            "status": {
+                "statusCode": "SUCCESS_STATUS"
+            },
+            "operationState": "FINISHED_STATE",
+            "operationStarted": 1697340030861,
+            "operationCompleted": 1697340033567,
+            "idempotencyType": "IDEMPOTENT",
+            "statementTimeout": 172800
+        },
+        "resultSetMetadata": {
+            "status": {
+                "statusCode": "SUCCESS_STATUS"
+            },
+            "schema": {
+                "columns": [
+                    {
+                        "columnName": "bool_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "BOOLEAN_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 1,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "tinyint_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "TINYINT_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 2,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "smallint_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "SMALLINT_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 3,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "int_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "INT_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 4,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "bigint_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "BIGINT_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 5,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "float_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "FLOAT_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 6,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "double_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "DOUBLE_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 7,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "string_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "STRING_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 8,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "timestamp_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "TIMESTAMP_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 9,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "binary_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "BINARY_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 10,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "array_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "ARRAY_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 11,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "map_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "MAP_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 12,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "struct_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "STRUCT_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 13,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "decimal_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "DECIMAL_TYPE",
+                                        "typeQualifiers": {
+                                            "qualifiers": {
+                                                "precision": {
+                                                    "i32Value": 10
+                                                },
+                                                "scale": {
+                                                    "i32Value": 2
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 14,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "date_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "DATE_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 15,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "interval_ym_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "STRING_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 16,
+                        "comment": ""
+                    },
+                    {
+                        "columnName": "interval_dt_col",
+                        "typeDesc": {
+                            "types": [
+                                {
+                                    "primitiveEntry": {
+                                        "type": "STRING_TYPE"
+                                    }
+                                }
+                            ]
+                        },
+                        "position": 17,
+                        "comment": ""
+                    }
+                ]
+            },
+            "resultFormat": "ARROW_BASED_SET",
+            "lz4Compressed": false,
+            "arrowSchema": "/////9gOAAAQAAAAAAAKAA4ABgANAAgACgAAAAAABAAQAAAAAAEKAAwAAAAIAAQACgAAAAgAAAAIAAAAAAAAABEAAADkDQAAGA0AAGAMAAC0CwAABAsAAFAKAACgCQAA9AgAACQIAAB4BwAAWAYAAKwEAADgAgAAKAIAAHwBAADAAAAABAAAAHLy//8UAAAAlAAAAJQAAAAAAAUBkAAAAAIAAABEAAAABAAAACjy//8IAAAAGAAAAA4AAAAiaW50ZXJ2YWwgZGF5IgAAFwAAAFNwYXJrOkRhdGFUeXBlOkpzb25UeXBlAGTy//8IAAAAGAAAAAwAAABJTlRFUlZBTCBEQVkAAAAAFgAAAFNwYXJrOkRhdGFUeXBlOlNxbE5hbWUAAAAAAABk8v//DwAAAGludGVydmFsX2R0X2NvbAAq8///FAAAAJQAAACUAAAAAAAFAZAAAAACAAAARAAAAAQAAADg8v//CAAAABgAAAAPAAAAImludGVydmFsIHllYXIiABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQAc8///CAAAABgAAAANAAAASU5URVJWQUwgWUVBUgAAABYAAABTcGFyazpEYXRhVHlwZTpTcWxOYW1lAAAAAAAAHPP//w8AAABpbnRlcnZhbF95bV9jb2wA4vP//xQAAACEAAAAhAAAAAAACAGEAAAAAgAAADwAAAAEAAAAmPP//wgAAAAQAAAABgAAACJkYXRlIgAAFwAAAFNwYXJrOkRhdGFUeXBlOkpzb25UeXBlAMzz//8IAAAAEAAAAAQAAABEQVRFAAAAABYAAABTcGFyazpEYXRhVHlwZTpTcWxOYW1lAAAAAAAATvf//wAAAAAIAAAAZGF0ZV9jb2wAAAAAivT//xQAAACUAAAAlAAAAAAABQGQAAAAAgAAAEQAAAAEAAAAQPT//wgAAAAYAAAADwAAACJkZWNpbWFsKDEwLDIpIgAXAAAAU3Bhcms6RGF0YVR5cGU6SnNvblR5cGUAfPT//wgAAAAYAAAADQAAAERFQ0lNQUwoMTAsMikAAAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAAHz0//8LAAAAZGVjaW1hbF9jb2wAPvX//xQAAAA0AQAAqAEAAAAADQGkAQAAAgAAANAAAAAEAAAA9PT//wgAAACkAAAAmwAAAHsidHlwZSI6InN0cnVjdCIsImZpZWxkcyI6W3sibmFtZSI6IkZpZWxkMSIsInR5cGUiOiJpbnRlZ2VyIiwibnVsbGFibGUiOnRydWUsIm1ldGFkYXRhIjp7fX0seyJuYW1lIjoiRmllbGQyIiwidHlwZSI6ImRhdGUiLCJudWxsYWJsZSI6dHJ1ZSwibWV0YWRhdGEiOnt9fV19ABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQC89f//CAAAACwAAAAhAAAAU1RSVUNUPEZpZWxkMTogSU5ULCBGaWVsZDI6IERBVEU+AAAAFgAAAFNwYXJrOkRhdGFUeXBlOlNxbE5hbWUAAAIAAAA8AAAABAAAAIb2//8UAAAAFAAAABQAAAAAAAgBFAAAAAAAAAAAAAAAgvn//wAAAAAGAAAARmllbGQyAAC69v//FAAAABQAAAAUAAAAAAACARgAAAAAAAAAAAAAAAD3//8AAAABIAAAAAYAAABGaWVsZDEAAET2//8KAAAAc3RydWN0X2NvbAAABvf//xQAAADcAAAAjAEAAAAAEQGIAQAAAgAAAIgAAAAEAAAAvPb//wgAAABcAAAAUAAAAHsidHlwZSI6Im1hcCIsImtleVR5cGUiOiJzdHJpbmciLCJ2YWx1ZVR5cGUiOiJpbnRlZ2VyIiwidmFsdWVDb250YWluc051bGwiOnRydWV9AAAAABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQA89///CAAAABwAAAAQAAAATUFQPFNUUklORywgSU5UPgAAAAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAQAAAAQAAACi////FAAAABQAAACQAAAAAAAADYwAAAAAAAAAAgAAAFAAAAAEAAAAGvj//xQAAAAUAAAAFAAAAAAAAgEYAAAAAAAAAAAAAABg+P//AAAAASAAAAAFAAAAdmFsdWUAEgAYABQAAAATAAwAAAAIAAQAEgAAABQAAAAUAAAAFAAAAAAAAAUQAAAAAAAAAAAAAADU9///AwAAAGtleQDg9///BwAAAGVudHJpZXMA8Pf//wcAAABtYXBfY29sAK74//8UAAAAwAAAAPwAAAAAAAwB+AAAAAIAAAB0AAAABAAAAGT4//8IAAAASAAAADwAAAB7InR5cGUiOiJhcnJheSIsImVsZW1lbnRUeXBlIjoiaW50ZWdlciIsImNvbnRhaW5zTnVsbCI6dHJ1ZX0AAAAAFwAAAFNwYXJrOkRhdGFUeXBlOkpzb25UeXBlAND4//8IAAAAFAAAAAoAAABBUlJBWTxJTlQ+AAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAQAAAAQAAAB++f//FAAAABQAAAAUAAAAAAACARgAAAAAAAAAAAAAAMT5//8AAAABIAAAAAcAAABlbGVtZW50AAj5//8JAAAAYXJyYXlfY29sAAAAyvn//xQAAACIAAAAiAAAAAAABAGEAAAAAgAAAEAAAAAEAAAAgPn//wgAAAAUAAAACAAAACJiaW5hcnkiAAAAABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQC4+f//CAAAABAAAAAGAAAAQklOQVJZAAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAALD5//8KAAAAYmluYXJ5X2NvbAAAcvr//xQAAACMAAAAlAAAAAAACgGkAAAAAgAAAEAAAAAEAAAAKPr//wgAAAAUAAAACwAAACJ0aW1lc3RhbXAiABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQBg+v//CAAAABQAAAAJAAAAVElNRVNUQU1QAAAAFgAAAFNwYXJrOkRhdGFUeXBlOlNxbE5hbWUAAAAAAAAIAAwACgAEAAgAAAAIAAAAAAACAAcAAABFdGMvVVRDAA0AAAB0aW1lc3RhbXBfY29sAAAAPvv//xQAAACIAAAAiAAAAAAABQGEAAAAAgAAAEAAAAAEAAAA9Pr//wgAAAAUAAAACAAAACJzdHJpbmciAAAAABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQAs+///CAAAABAAAAAGAAAAU1RSSU5HAAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAACT7//8KAAAAc3RyaW5nX2NvbAAA5vv//xQAAACIAAAAiAAAAAAAAwGIAAAAAgAAAEAAAAAEAAAAnPv//wgAAAAUAAAACAAAACJkb3VibGUiAAAAABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQDU+///CAAAABAAAAAGAAAARE9VQkxFAAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAAFb///8AAAIACgAAAGRvdWJsZV9jb2wAAJL8//8UAAAAhAAAAIwAAAAAAAMBjAAAAAIAAAA8AAAABAAAAEj8//8IAAAAEAAAAAcAAAAiZmxvYXQiABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQB8/P//CAAAABAAAAAFAAAARkxPQVQAAAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAAAAABgAIAAYABgAAAAAAAQAJAAAAZmxvYXRfY29sAAAAQv3//xQAAACEAAAAhAAAAAAAAgGIAAAAAgAAADwAAAAEAAAA+Pz//wgAAAAQAAAABgAAACJsb25nIgAAFwAAAFNwYXJrOkRhdGFUeXBlOkpzb25UeXBlACz9//8IAAAAEAAAAAYAAABCSUdJTlQAABYAAABTcGFyazpEYXRhVHlwZTpTcWxOYW1lAAAAAAAA+P3//wAAAAFAAAAACgAAAGJpZ2ludF9jb2wAAO79//8UAAAAhAAAAIQAAAAAAAIBiAAAAAIAAABAAAAABAAAAKT9//8IAAAAFAAAAAkAAAAiaW50ZWdlciIAAAAXAAAAU3Bhcms6RGF0YVR5cGU6SnNvblR5cGUA3P3//wgAAAAMAAAAAwAAAElOVAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAAKT+//8AAAABIAAAAAcAAABpbnRfY29sAJb+//8UAAAAiAAAAIgAAAAAAAIBjAAAAAIAAAA8AAAABAAAAEz+//8IAAAAEAAAAAcAAAAic2hvcnQiABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQCA/v//CAAAABQAAAAIAAAAU01BTExJTlQAAAAAFgAAAFNwYXJrOkRhdGFUeXBlOlNxbE5hbWUAAAAAAABQ////AAAAARAAAAAMAAAAc21hbGxpbnRfY29sAAAAAEr///8UAAAAhAAAAIwAAAAAAAIBkAAAAAIAAAA8AAAABAAAAAD///8IAAAAEAAAAAYAAAAiYnl0ZSIAABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQA0////CAAAABAAAAAHAAAAVElOWUlOVAAWAAAAU3Bhcms6RGF0YVR5cGU6U3FsTmFtZQAAAAAAAAgADAAIAAcACAAAAAAAAAEIAAAACwAAAHRpbnlpbnRfY29sAAAAEgAYABQAEwASAAwAAAAIAAQAEgAAABQAAACQAAAAlAAAAAAABgGQAAAAAgAAAEgAAAAEAAAAyP///wgAAAAUAAAACQAAACJib29sZWFuIgAAABcAAABTcGFyazpEYXRhVHlwZTpKc29uVHlwZQAIAAwACAAEAAgAAAAIAAAAEAAAAAcAAABCT09MRUFOABYAAABTcGFyazpEYXRhVHlwZTpTcWxOYW1lAAAAAAAABAAEAAQAAAAIAAAAYm9vbF9jb2wAAAAAAAAAAA==",
+            "cacheLookupResult": "CACHE_MISS",
+            "uncompressedBytes": 1704,
+            "compressedBytes": 1704,
+            "isStagingOperation": false,
+            "reasonForNoCloudFetch": "CLOUD_FETCH_SUPPORT",
+            "cacheLookupLatency": 3,
+            "remoteCacheMissReason": "UnsupportedResultFormat",
+            "remoteResultCacheEnabled": true,
+            "isServerless": true,
+            "truncatedByThriftLimit": false
+        },
+        "resultSet": {
+            "status": {
+                "statusCode": "SUCCESS_STATUS"
+            },
+            "hasMoreRows": false,
+            "results": {
+                "startRowOffset": 0,
+                "rows": [],
+                "arrowBatches": [
+                    {
+                        "batch": "/////+gEAAAUAAAAAAAAAAwAFgAOABUAEAAEAAwAAAC4AQAAAAAAAAAABAAQAAAAAAMKABgADAAIAAQACgAAABQAAAA4AwAAAQAAAAAAAAAAAAAAMgAAAAAAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAEAAAAAAAAAEAAAAAAAAAABAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAgAAAAAAAAAAEAAAAAAAAAKAAAAAAAAAACAAAAAAAAADAAAAAAAAAAAQAAAAAAAAA4AAAAAAAAAAQAAAAAAAAAQAAAAAAAAAABAAAAAAAAAEgAAAAAAAAACAAAAAAAAABQAAAAAAAAAAEAAAAAAAAAWAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAAAQAAAAAAAABoAAAAAAAAAAgAAAAAAAAAcAAAAAAAAAABAAAAAAAAAHgAAAAAAAAACAAAAAAAAACAAAAAAAAAAAkAAAAAAAAAkAAAAAAAAAABAAAAAAAAAJgAAAAAAAAACAAAAAAAAACgAAAAAAAAAAEAAAAAAAAAqAAAAAAAAAAIAAAAAAAAALAAAAAAAAAAAgAAAAAAAAC4AAAAAAAAAAEAAAAAAAAAwAAAAAAAAAAIAAAAAAAAAMgAAAAAAAAAAQAAAAAAAADQAAAAAAAAAAwAAAAAAAAA4AAAAAAAAAABAAAAAAAAAOgAAAAAAAAACAAAAAAAAADwAAAAAAAAAAEAAAAAAAAA+AAAAAAAAAABAAAAAAAAAAABAAAAAAAADAAAAAAAAAAQAQAAAAAAAAgAAAAAAAAAGAEAAAAAAAABAAAAAAAAACABAAAAAAAACAAAAAAAAAAoAQAAAAAAAAEAAAAAAAAAMAEAAAAAAAABAAAAAAAAADgBAAAAAAAABAAAAAAAAABAAQAAAAAAAAEAAAAAAAAASAEAAAAAAAAEAAAAAAAAAFABAAAAAAAAAQAAAAAAAABYAQAAAAAAAAgAAAAAAAAAYAEAAAAAAAAEAAAAAAAAAGgBAAAAAAAAAQAAAAAAAABwAQAAAAAAAAQAAAAAAAAAeAEAAAAAAAABAAAAAAAAAIABAAAAAAAACAAAAAAAAACIAQAAAAAAAAUAAAAAAAAAkAEAAAAAAAABAAAAAAAAAJgBAAAAAAAACAAAAAAAAACgAQAAAAAAABUAAAAAAAAAAAAAABcAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAwAAAAAAAAABAAAAAAAAAAQAAAAAAAAAAQAAAAAAAADNzIw/AAAAAAEAAAAAAAAAmpmZmZmZAUABAAAAAAAAAAAAAAAJAAAAc3RyaW5ndmFsAAAAAAAAAAEAAAAAAAAAAOBfRQOdQP4BAAAAAAAAAAAAAAACAAAAGr8AAAAAAAABAAAAAAAAAAAAAAADAAAABwAAAAAAAAABAAAAAgAAAAMAAAAAAAAAAQAAAAAAAAAAAAAAAgAAAAMAAAAAAAAAAwAAAAAAAAAAAAAABAAAAAgAAAAAAAAAa2V5MWtleTIDAAAAAAAAAAEAAAACAAAAAQAAAAAAAAABAAAAAAAAAE0AAAAAAAAAAQAAAAAAAADDSAAAAAAAAAEAAAAAAAAAAAAAAAQAAAAzLjMwAAAAAAEAAAAAAAAAx8Tp/wAAAAABAAAAAAAAAAAAAAAFAAAAMTAwLTAAAAABAAAAAAAAAAAAAAAVAAAALTggMDA6MDA6MDAuMDAwMDAwMDAwAAAA",
+                        "rowCount": 1
+                    }
+                ]
+            }
+        },
+        "closeOperation": {
+            "status": {
+                "statusCode": "SUCCESS_STATUS"
+            }
+        }
+    },
+    "executionRejected": false,
+    "maxClusterCapacity": 10,
+    "queryCost": 0.5,
+    "currentClusterLoad": 1,
+    "idempotencyType": "IDEMPOTENT",
+    "remoteResultCacheEnabled": true,
+    "isServerless": true
+}

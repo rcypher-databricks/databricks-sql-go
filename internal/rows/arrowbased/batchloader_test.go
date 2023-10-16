@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -229,89 +230,96 @@ func TestBatchLoader(t *testing.T) {
 
 	})
 
-	// t.Run("test link load failure", func(t *testing.T) {
-	// 	var nLoads int
-	// 	var handler func(w http.ResponseWriter, r *http.Request) = func(w http.ResponseWriter, r *http.Request) {
-	// 		nLoads += 1
-	// 		if nLoads == 3 {
-	// 			w.WriteHeader(http.StatusInternalServerError)
-	// 		} else {
-	// 			w.WriteHeader(http.StatusOK)
-	// 			_, err := w.Write(generateMockArrowBytes(generateArrowRecord()))
-	// 			if err != nil {
-	// 				panic(err)
-	// 			}
-	// 		}
-	// 	}
+	t.Run("test link load failure", func(t *testing.T) {
+		var nLoads int
+		var handler func(w http.ResponseWriter, r *http.Request) = func(w http.ResponseWriter, r *http.Request) {
+			nLoads += 1
+			if nLoads == 3 {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
 
-	// 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	// 		handler(w, r)
-	// 	}))
-	// 	defer server.Close()
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write(generateMockArrowBytes(generateArrowRecord()))
+				if err != nil {
+					panic(err)
+				}
+			}
+		}
 
-	// 	expiryTime := time.Now().Add(10 * time.Second)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler(w, r)
+		}))
+		defer server.Close()
 
-	// 	urls := []*cli_service.TSparkArrowResultLink{
-	// 		{
-	// 			FileLink:       server.URL,
-	// 			ExpiryTime:     expiryTime.Unix(),
-	// 			StartRowOffset: 0,
-	// 			RowCount:       3,
-	// 		},
-	// 		{
-	// 			FileLink:       server.URL,
-	// 			ExpiryTime:     expiryTime.Unix(),
-	// 			StartRowOffset: 3,
-	// 			RowCount:       3,
-	// 		},
-	// 		{
-	// 			FileLink:       server.URL,
-	// 			ExpiryTime:     expiryTime.Unix(),
-	// 			StartRowOffset: 6,
-	// 			RowCount:       3,
-	// 		},
-	// 		{
-	// 			FileLink:       server.URL,
-	// 			ExpiryTime:     expiryTime.Unix(),
-	// 			StartRowOffset: 9,
-	// 			RowCount:       3,
-	// 		},
-	// 	}
+		expiryTime := time.Now().Add(10 * time.Second)
 
-	// 	cfg := config.WithDefaults()
-	// 	cfg.MaxDownloadThreads = 1
+		urls := []*cli_service.TSparkArrowResultLink{
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 0,
+				RowCount:       3,
+			},
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 3,
+				RowCount:       3,
+			},
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 6,
+				RowCount:       3,
+			},
+			{
+				FileLink:       server.URL,
+				ExpiryTime:     expiryTime.Unix(),
+				StartRowOffset: 9,
+				RowCount:       3,
+			},
+		}
 
-	// 	bl, err := NewCloudBatchLoader(
-	// 		context.Background(),
-	// 		urls,
-	// 		0,
-	// 		cfg,
-	// 		&testStatusGetter{},
-	// 		logger.Logger,
-	// 	)
-	// 	assert.Nil(t, err)
+		cfg := config.WithDefaults()
+		cfg.MaxDownloadThreads = 1
 
-	// 	batch, err := bl.GetBatchFor(0)
-	// 	assert.Nil(t, err)
-	// 	assert.NotNil(t, batch)
+		bl := NewCloudBatchLoader(
+			context.Background(),
+			urls,
+			0,
+			cfg,
+			rowscanner.NewErrMaker("a", "b", "c"),
+		)
 
-	// 	time.Sleep(1 * time.Second)
+		assert.True(t, bl.HasNext())
+		batch, err := bl.Next()
+		assert.Nil(t, err)
+		assert.NotNil(t, batch)
+		_, err = bl.Next()
+		assert.Nil(t, err)
 
-	// 	for _, i := range []int{0, 1} {
-	// 		batch, err := bl.GetBatchFor(urls[i].StartRowOffset + 1)
-	// 		assert.Nil(t, err)
-	// 		assert.NotNil(t, batch)
-	// 		assert.Equal(t, urls[i].RowCount, batch.Count())
-	// 		assert.Equal(t, urls[i].StartRowOffset, batch.Start())
-	// 	}
+		_, err = bl.Next()
+		assert.ErrorContains(t, err, "cloud fetch batch loader failed to download results")
+		assert.False(t, bl.HasNext())
 
-	// 	for _, i := range []int{2, 3} {
-	// 		_, err := bl.GetBatchFor(urls[i].StartRowOffset + 1)
-	// 		assert.NotNil(t, err)
+		_, err = bl.Next()
+		assert.ErrorIs(t, err, io.EOF)
 
-	// 	}
+		// for _, i := range []int{0, 1} {
+		// 	batch, err := bl.GetBatchFor(urls[i].StartRowOffset + 1)
+		// 	assert.Nil(t, err)
+		// 	assert.NotNil(t, batch)
+		// 	assert.Equal(t, urls[i].RowCount, batch.Count())
+		// 	assert.Equal(t, urls[i].StartRowOffset, batch.Start())
+		// }
 
-	// })
+		// for _, i := range []int{2, 3} {
+		// 	_, err := bl.GetBatchFor(urls[i].StartRowOffset + 1)
+		// 	assert.NotNil(t, err)
+
+		// }
+
+	})
 }
 
 func generateArrowRecord() arrow.Record {

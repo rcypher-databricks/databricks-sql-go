@@ -120,6 +120,7 @@ type batchLoader[T interface {
 	cancelFetch    context.CancelFunc
 	batchChan      <-chan ArrowRecordBatch
 	errMkr         rowscanner.ErrMaker
+	isFinished     bool
 }
 
 var _ BatchLoader = (*batchLoader[*localBatch])(nil)
@@ -178,27 +179,38 @@ func (bl *batchLoader[T]) Next() (ArrowRecordBatch, error) {
 	}
 
 	bl.nextBatchStart = batch.Start() + batch.Count()
+	if !bl.HasNext() {
+		bl.Close()
+	}
 
 	return batch, err
 }
 
 func (bl *batchLoader[T]) HasNext() bool {
-	return bl.Contains(bl.nextBatchStart)
+	hasNext := !bl.isFinished && bl.Contains(bl.nextBatchStart)
+	if !hasNext {
+		bl.Close()
+	}
+	return hasNext
 }
 
 func (cbl *batchLoader[T]) Close() {
-	if cbl.cancelFetch != nil {
-		cbl.cancelFetch()
-	}
+	if !cbl.isFinished {
+		cbl.isFinished = true
 
-	for i := range cbl.arrowBatches {
-		cbl.arrowBatches[i].Close()
-	}
+		if cbl.cancelFetch != nil {
+			cbl.cancelFetch()
+		}
 
-	// drain any batches in the fetcher output channel
-	if cbl.batchChan != nil {
-		for b := range cbl.batchChan {
-			b.Close()
+		for i := range cbl.arrowBatches {
+			cbl.arrowBatches[i].Close()
+		}
+
+		// drain any batches in the fetcher output channel
+		if cbl.batchChan != nil {
+			for b := range cbl.batchChan {
+				b.Close()
+			}
 		}
 	}
 }

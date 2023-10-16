@@ -353,7 +353,7 @@ func NewBatchLoaderIterator(
 		func(rp *cli_service.TFetchResultsResp) (BatchLoader, error) { return newBatchLoaderFn(rp), nil },
 	)
 
-	if !resultPageIterator.HasNext() {
+	if resultPageIterator == nil || !resultPageIterator.HasNext() {
 		bli.Close()
 	}
 

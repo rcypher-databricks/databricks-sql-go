@@ -552,7 +552,7 @@ func (c *conn) execStagingOperation(
 
 	var isStagingOperation bool
 	if exStmtResp.DirectResults != nil && exStmtResp.DirectResults.ResultSetMetadata != nil && exStmtResp.DirectResults.ResultSetMetadata.IsStagingOperation != nil {
-		isStagingOperation = *exStmtResp.DirectResults.ResultSetMetadata.IsStagingOperation
+		isStagingOperation = exStmtResp.DirectResults.ResultSetMetadata.GetIsStagingOperation()
 	} else {
 		req := cli_service.TGetResultSetMetadataReq{
 			OperationHandle: exStmtResp.OperationHandle,

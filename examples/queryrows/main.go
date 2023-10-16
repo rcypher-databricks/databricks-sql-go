@@ -9,13 +9,14 @@ import (
 	"strconv"
 
 	dbsql "github.com/databricks/databricks-sql-go"
+	"github.com/databricks/databricks-sql-go/internal/client"
 	"github.com/joho/godotenv"
 )
 
 func main() {
 	// Opening a driver typically will not attempt to connect to the database.
 	err := godotenv.Load()
-
+	client.RecordResults = true
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -41,11 +42,13 @@ func main() {
 	// ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	// defer cancel()
 	ctx := context.Background()
-	if err := db.Ping(); err != nil {
-		fmt.Println(err)
-	}
+	// if err := db.Ping(); err != nil {
+	// 	fmt.Println(err)
+	// }
 
-	rows, err1 := db.QueryContext(ctx, `select cut, carat from main.default.diamonds `)
+	rows, err1 := db.QueryContext(ctx, `select * from raymond.default.rc_all_types `)
+	defer rows.Close()
+
 	if err1 != nil {
 		if err1 == sql.ErrNoRows {
 			fmt.Println("not found")

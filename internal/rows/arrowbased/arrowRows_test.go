@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow/go/v12/arrow"
 	"github.com/apache/arrow/go/v12/arrow/array"
@@ -16,6 +17,7 @@ import (
 	"github.com/databricks/databricks-sql-go/internal/cli_service"
 	"github.com/databricks/databricks-sql-go/internal/config"
 	"github.com/databricks/databricks-sql-go/internal/rows/rowscanner"
+	"github.com/databricks/databricks-sql-go/logger"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -224,124 +226,6 @@ func TestArrowRowScanner(t *testing.T) {
 		assert.EqualError(t, err, "failed making RowsValues")
 	})
 
-	// t.Run("loadBatch record read failure", func(t *testing.T) {
-	// 	rowSet := &cli_service.TRowSet{
-	// 		ArrowBatches: []*cli_service.TSparkArrowBatch{
-	// 			{RowCount: 5},
-	// 			{RowCount: 3},
-	// 			{RowCount: 7},
-	// 		},
-	// 	}
-	// 	var hasMoreRows bool
-	// 	fetchResults := &cli_service.TFetchResultsResp{Results: rowSet, HasMoreRows: &hasMoreRows}
-	// 	arrowSchema := getAllTypesArrowSchema()
-	// 	schema := getAllArrowTypesSchema()
-	// 	metadataResp := getMetadataResp(arrowSchema, schema)
-	// 	rpi := &testResultPageIterator{}
-	// 	cfg := config.Config{}
-	// 	cfg.UseLz4Compression = false
-
-	// 	d, _ := NewArrowRowScanner(rpi, true, nil, cfg, metadataResp, fetchResults, rowscanner.NewErrMaker("a", "b", "c"))
-
-	// 	var ars *arrowRowScanner = d.(*arrowRowScanner)
-
-	// 	assert.Nil(t, ars.rowValues)
-
-	// 	b1 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(0, 5), arrowRecords: []ArrowRecord{
-	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(0, 2), Record: &fakeRecord{}},
-	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(2, 3), Record: &fakeRecord{}}}}
-	// 	b2 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(5, 3), arrowRecords: []ArrowRecord{
-	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(5, 3), Record: &fakeRecord{}}}}
-	// 	b3 := &arrowRecordBatch{Delimiter: rowscanner.NewDelimiter(8, 7), arrowRecords: []ArrowRecord{
-	// 		&arrowRecord{Delimiter: rowscanner.NewDelimiter(8, 7), Record: &fakeRecord{}}}}
-
-	// 	fbl := &fakeBatchLoader{
-	// 		Delimiter: rowscanner.NewDelimiter(0, 15),
-	// 		batches:   []ArrowRecordBatch{b1, b2, b3},
-	// 		err:       errors.New("error reading record"),
-	// 	}
-
-	// 	var callCount int
-	// 	mkr := func(ar ArrowRecord) (RowsValues, error) {
-	// 		callCount += 1
-	// 		return nil, errors.New("failed making RowsValues")
-	// 	}
-
-	// 	bli := NewBatchLoaderIterator(rpi, nil)
-	// 	bi := NewBatchIterator(bli, fbl)
-	// 	sari := NewSparkArrowRecordIterator(bi)
-	// 	rvi := NewRowsValuesIterator(sari, mkr)
-	// 	ars.rowValuesIterator = rvi
-
-	// 	err := ars.loadBatchFor(0)
-	// 	assert.NotNil(t, err)
-	// 	assert.ErrorContains(t, err, "error reading record")
-
-	// })
-
-	// t.Run("Paginate through batches", func(t *testing.T) {
-	// 	rowSet := &cli_service.TRowSet{
-	// 		ArrowBatches: []*cli_service.TSparkArrowBatch{
-	// 			{RowCount: 5},
-	// 			{RowCount: 3},
-	// 			{RowCount: 7},
-	// 		},
-	// 	}
-	// 	schema := getAllTypesSchema()
-	// 	metadataResp := getMetadataResp(schema)
-
-	// 	cfg := config.Config{}
-	// 	cfg.UseLz4Compression = false
-
-	// 	d, _ := NewArrowRowScanner(metadataResp, rowSet, &cfg, nil, context.Background())
-
-	// 	var ars *arrowRowScanner = d.(*arrowRowScanner)
-
-	// 	fbl := &fakeBatchLoader{
-	// 		Delimiter: rowscanner.NewDelimiter(0, 15),
-	// 		batches: []SparkArrowBatch{
-	// 			&sparkArrowBatch{Delimiter: rowscanner.NewDelimiter(0, 5), arrowRecords: []SparkArrowRecord{&sparkArrowRecord{Delimiter: rowscanner.NewDelimiter(0, 5), Record: &fakeRecord{}}}},
-	// 			&sparkArrowBatch{Delimiter: rowscanner.NewDelimiter(5, 3), arrowRecords: []SparkArrowRecord{&sparkArrowRecord{Delimiter: rowscanner.NewDelimiter(5, 3), Record: &fakeRecord{}}}},
-	// 			&sparkArrowBatch{Delimiter: rowscanner.NewDelimiter(8, 7), arrowRecords: []SparkArrowRecord{&sparkArrowRecord{Delimiter: rowscanner.NewDelimiter(8, 7), Record: &fakeRecord{}}}},
-	// 		},
-	// 	}
-	// 	var e dbsqlerr.DBError
-	// 	ars.batchIterator, e = NewBatchIterator(fbl)
-	// 	assert.Nil(t, e)
-
-	// 	for _, i := range []int64{0, 1, 2, 3, 4} {
-	// 		err := ars.loadBatchFor(i)
-	// 		assert.Nil(t, err)
-	// 		assert.NotNil(t, fbl.lastReadBatch)
-	// 		assert.Equal(t, 1, fbl.callCount)
-	// 		assert.Equal(t, int64(0), fbl.lastReadBatch.Start())
-	// 	}
-
-	// 	for _, i := range []int64{5, 6, 7} {
-	// 		err := ars.loadBatchFor(i)
-	// 		assert.Nil(t, err)
-	// 		assert.NotNil(t, fbl.lastReadBatch)
-	// 		assert.Equal(t, 2, fbl.callCount)
-	// 		assert.Equal(t, int64(5), fbl.lastReadBatch.Start())
-	// 	}
-
-	// 	for _, i := range []int64{8, 9, 10, 11, 12, 13, 14} {
-	// 		err := ars.loadBatchFor(i)
-	// 		assert.Nil(t, err)
-	// 		assert.NotNil(t, fbl.lastReadBatch)
-	// 		assert.Equal(t, 3, fbl.callCount)
-	// 		assert.Equal(t, int64(8), fbl.lastReadBatch.Start())
-	// 	}
-
-	// 	err := ars.loadBatchFor(-1)
-	// 	assert.NotNil(t, err)
-	// 	assert.EqualError(t, err, "databricks: driver error: "+errArrowRowsInvalidRowNumber(-1))
-
-	// 	err = ars.loadBatchFor(15)
-	// 	assert.NotNil(t, err)
-	// 	assert.EqualError(t, err, "databricks: driver error: "+errArrowRowsInvalidRowNumber(15))
-	// })
-
 	// t.Run("Error on retrieving not implemented native arrow types", func(t *testing.T) {
 	// 	rowSet := &cli_service.TRowSet{
 	// 		ArrowBatches: []*cli_service.TSparkArrowBatch{
@@ -438,6 +322,8 @@ func TestArrowRowScanner(t *testing.T) {
 	// 		schema := &cli_service.TTableSchema{
 	// 			Columns: []*cli_service.TColumnDesc{columns[i]},
 	// 		}
+
+	// 		fields := []arrow.Field{}
 	// 		metadataResp := getMetadataResp(schema)
 
 	// 		cfg := config.Config{}
@@ -483,88 +369,96 @@ func TestArrowRowScanner(t *testing.T) {
 	// 	}
 	// })
 
-	// t.Run("Retrieve values", func(t *testing.T) {
-	// 	// 	bool_col
-	// 	// 	int_col,
-	// 	// 	bigint_col,
-	// 	// 	float_col,
-	// 	// 	double_col,
-	// 	// 	string_col,
-	// 	// 	timestamp_col,
-	// 	// 	binary_col,
-	// 	// 	array_col,
-	// 	// 	map_col,
-	// 	// struct_col,
-	// 	// 	decimal_col,
-	// 	// 	date_col,
-	// 	// interval_ym_col,
-	// 	// interval_dt_col
-	// 	expected := []driver.Value{
-	// 		true, int8(4), int16(3), int32(2), int64(1), float32(3.3), float64(2.2), "stringval",
-	// 		time.Date(2021, 7, 1, 5, 43, 28, 0, time.UTC),
-	// 		[]uint8{26, 191},
-	// 		"[1,2,3]",
-	// 		"{\"key1\":1}",
-	// 		"{\"Field1\":77,\"Field2\":\"Field 2 value\"}",
-	// 		"1",
-	// 		time.Date(2020, 12, 31, 0, 0, 0, 0, time.UTC),
-	// 		"100-0",
-	// 		"-8 00:00:00.000000000",
-	// 	}
+	t.Run("Retrieve values", func(t *testing.T) {
+		// 	bool_col
+		// 	int_col,
+		// 	bigint_col,
+		// 	float_col,
+		// 	double_col,
+		// 	string_col,
+		// 	timestamp_col,
+		// 	binary_col,
+		// 	array_col,
+		// 	map_col,
+		// struct_col,
+		// 	decimal_col,
+		// 	date_col,
+		// interval_ym_col,
+		// interval_dt_col
+		expected := []driver.Value{
+			true, int8(1), int16(2), int32(3), int64(4), float32(1.1), float64(2.2), "stringval",
+			time.Date(2021, 7, 1, 5, 43, 28, 0, time.UTC),
+			[]uint8{26, 191},
+			"[1,2,3]",
+			"{\"key1\":1,\"key2\":2}",
+			"{\"Field1\":77,\"Field2\":\"2020-12-31 00:00:00 +0000 UTC\"}",
+			"3.30",
+			time.Date(2020, 12, 31, 0, 0, 0, 0, time.UTC),
+			"100-0",
+			"-8 00:00:00.000000000",
+		}
 
-	// 	readValues := func(fileName string, nativeDates bool) {
-	// 		executeStatementResp := cli_service.TExecuteStatementResp{}
-	// 		loadTestData(t, fileName, &executeStatementResp)
+		readValues := func(fileName string, nativeDates bool) {
+			executeStatementResp := cli_service.TExecuteStatementResp{}
+			loadTestData(t, fileName, &executeStatementResp)
 
-	// 		config := config.WithDefaults()
-	// 		config.UseArrowNativeTimestamp = nativeDates
-	// 		config.UseArrowNativeComplexTypes = false
-	// 		config.UseArrowNativeDecimal = false
-	// 		config.UseArrowNativeIntervalTypes = false
-	// 		d, err := NewArrowRowScanner(executeStatementResp.DirectResults.ResultSetMetadata, executeStatementResp.DirectResults.ResultSet.Results, config, nil, context.Background())
-	// 		assert.Nil(t, err)
+			config := config.WithDefaults()
+			config.UseArrowNativeTimestamp = nativeDates
+			config.UseArrowNativeComplexTypes = false
+			config.UseArrowNativeDecimal = false
+			config.UseArrowNativeIntervalTypes = false
+			d, err := NewArrowRowScanner(nil, true, logger.Logger, *config,
+				executeStatementResp.DirectResults.ResultSetMetadata,
+				executeStatementResp.DirectResults.ResultSet,
+				rowscanner.NewErrMaker("a", "b", "c"))
 
-	// 		ars := d.(*arrowRowScanner)
+			assert.Nil(t, err)
 
-	// 		dest := make([]driver.Value, len(executeStatementResp.DirectResults.ResultSetMetadata.Schema.Columns))
-	// 		err = ars.ScanRow(dest, 0)
-	// 		assert.Nil(t, err)
+			ars := d.(*arrowRowScanner)
 
-	// 		for i := range expected {
-	// 			assert.Equal(t, expected[i], dest[i])
-	// 		}
-	// 	}
+			dest := make([]driver.Value, len(executeStatementResp.DirectResults.ResultSetMetadata.Schema.Columns))
+			err = ars.ScanRow(dest)
+			assert.Nil(t, err)
 
-	// 	readValues("all_types.json", true)
-	// 	readValues("all_types_time_strings.json", false)
-	// })
+			for i := range expected {
+				assert.Equal(t, expected[i], dest[i])
+			}
+		}
 
-	// t.Run("Retrieve negative date/time values", func(t *testing.T) {
-	// 	expectedTime := time.Date(-2021, 7, 1, 5, 43, 28, 0, time.UTC)
-	// 	expectedDate := time.Date(-2020, 12, 31, 0, 0, 0, 0, time.UTC)
+		readValues("all_types.json", true)
+		readValues("all_types_time_strings.json", false)
+	})
 
-	// 	readValues := func(fileName string, useNativeTimestamp bool) {
-	// 		executeStatementResp := cli_service.TExecuteStatementResp{}
-	// 		loadTestData(t, "all_types.json", &executeStatementResp)
+	t.Run("Retrieve negative date/time values", func(t *testing.T) {
+		expectedTime := time.Date(-2021, 7, 1, 5, 43, 28, 0, time.UTC)
+		expectedDate := time.Date(-2020, 12, 31, 0, 0, 0, 0, time.UTC)
 
-	// 		config := config.WithDefaults()
-	// 		config.UseArrowNativeComplexTypes = false
-	// 		d, err := NewArrowRowScanner(executeStatementResp.DirectResults.ResultSetMetadata, executeStatementResp.DirectResults.ResultSet.Results, config, nil, context.Background())
-	// 		assert.Nil(t, err)
+		readValues := func(fileName string, useNativeTimestamp bool) {
+			executeStatementResp := cli_service.TExecuteStatementResp{}
+			loadTestData(t, "all_types.json", &executeStatementResp)
 
-	// 		ars := d.(*arrowRowScanner)
+			config := config.WithDefaults()
+			config.UseArrowNativeComplexTypes = false
+			d, err := NewArrowRowScanner(nil, true, logger.Logger, *config,
+				executeStatementResp.DirectResults.ResultSetMetadata,
+				executeStatementResp.DirectResults.ResultSet,
+				rowscanner.NewErrMaker("a", "b", "c"))
 
-	// 		dest := make([]driver.Value, len(executeStatementResp.DirectResults.ResultSetMetadata.Schema.Columns))
-	// 		err = ars.ScanRow(dest, 1)
-	// 		assert.Nil(t, err)
+			assert.Nil(t, err)
 
-	// 		assert.Equal(t, expectedTime, dest[8])  //nolint
-	// 		assert.Equal(t, expectedDate, dest[14]) //nolint
-	// 	}
+			ars := d.(*arrowRowScanner)
 
-	// 	readValues("all_types.json", true)
-	// 	readValues("all_types_time_strings.json", true)
-	// })
+			dest := make([]driver.Value, len(executeStatementResp.DirectResults.ResultSetMetadata.Schema.Columns))
+			err = ars.ScanRow(dest)
+			assert.Nil(t, err)
+
+			assert.Equal(t, expectedTime, dest[8])  //nolint
+			assert.Equal(t, expectedDate, dest[14]) //nolint
+		}
+
+		readValues("all_types_negative_time.json", true)
+
+	})
 
 	// t.Run("Retrieve null values", func(t *testing.T) {
 	// 	executeStatementResp := cli_service.TExecuteStatementResp{}

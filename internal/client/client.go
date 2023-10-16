@@ -178,6 +178,8 @@ func (tsc *ThriftServiceClient) ExecuteStatement(ctx context.Context, req *cli_s
 		return resp, err
 	}
 
+	recordResult(ctx, resp)
+
 	return resp, CheckStatus(resp)
 }
 

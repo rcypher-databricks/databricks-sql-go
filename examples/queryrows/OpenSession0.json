@@ -1,0 +1,16 @@
+{
+ "status": {
+  "statusCode": "SUCCESS_STATUS"
+ },
+ "serverProtocolVersion": "SPARK_CLI_SERVICE_PROTOCOL_V7",
+ "sessionHandle": {
+  "sessionId": {
+   "guid": "Ae5rCctlG8y3BAmpuuCCIw==",
+   "secret": "M41SnYJyRuuEgstBlGaDnQ=="
+  }
+ },
+ "initialNamespace": {
+  "catalogName": "hive_metastore"
+ },
+ "canUseMultipleCatalogs": true
+}
